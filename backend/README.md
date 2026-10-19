@@ -21,7 +21,13 @@ Os módulos existentes são `categories` e `expenses`. O código técnico reutil
 4. Instale as dependências: `pip install -r requirements.txt`.
 5. Aplique as migrações: `alembic upgrade head`.
 
-As tabelas criadas são `categories` e `expenses`. A migração ainda não insere categorias iniciais, pois o pedido atual cobre somente a estrutura das tabelas.
+As migrações criam as tabelas `categories`, `payment_methods` e `expenses`. Para inserir as categorias e meios de pagamento iniciais, execute a partir da pasta `backend`:
+
+```powershell
+python -m app.seed
+```
+
+O seeder pode ser executado novamente: ele insere apenas os nomes ainda ausentes.
 
 ## Testes
 

@@ -90,11 +90,13 @@ Para os testes do backend:
 
 Os testes usam SQLite em memória, não o PostgreSQL local. Em uma execução anterior foram relatados 6 testes aprovados e 83% de cobertura; esses números são históricos, não uma garantia do estado atual. O frontend não declara script de testes em `package.json`.
 
-## Git e próximos passos já combinados
+## Git e GitHub
 
-O usuário quer manter frontend e backend no mesmo repositório, criar o commit inicial e publicar o projeto no GitHub. A branch principal deve ser `master`; melhorias futuras devem ter branches separadas e PRs para `master`. Não há necessidade atual de branches principais dev, qa ou staging.
+Frontend e backend ficam no mesmo repositório Git. O repositório GitHub `brunokrauthamer/expenses` foi criado pelo usuário e o remoto `origin` aponta para `https://github.com/brunokrauthamer/expenses.git`. A branch atual é `master`, configurada para acompanhar `origin/master`. O commit inicial foi criado e enviado: `65e1b5c` (`Initial commit`).
 
-Na última verificação, a branch `master` ainda não tinha commits, os arquivos iniciais estavam staged e não havia remote configurado. O usuário solicitou usar seu perfil do GitHub como autor do commit após conectar a conta. A integração do GitHub foi instalada, mas as ações dela não estavam disponíveis no chat anterior. Verifique identidade, autenticação e permissões antes de concluir commit, criação do repositório e push; não invente nome ou e-mail. A escolha de repositório privado foi sugerida anteriormente, mas confirme a preferência caso não esteja estabelecida no contexto disponível.
+A identidade usada no commit veio do perfil GitHub conectado: Bruno Krauthamer (`brunokrauthamer@gmail.com`). Ela foi configurada localmente neste repositório. Futuras melhorias devem usar branches separadas e PRs para `master`; não há necessidade atual de branches principais `dev`, `qa` ou `staging`.
 
-Antes de qualquer commit, revise os arquivos staged e assegure que segredos, ambiente virtual, dependências instaladas e arquivos gerados permanecem excluídos.
+O primeiro push falhou sob a rede restrita do ambiente e foi concluído após autorização de rede. Se um push futuro falhar por conectividade, verificar a rede/autenticação GitHub e repetir com o acesso apropriado. A integração GitHub disponível no chat pode consultar recursos, mas não oferece criação de repositórios. Navegador e GitHub CLI não estavam disponíveis naquela sessão.
+
+Antes de qualquer commit, revise os arquivos staged e assegure que segredos, ambiente virtual, dependências instaladas e arquivos gerados permanecem excluídos. O `.gitignore` cobre `.env`, ambientes virtuais, `node_modules`, builds, caches Python e cobertura.
 
