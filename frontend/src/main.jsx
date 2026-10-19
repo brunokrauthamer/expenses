@@ -3,20 +3,18 @@ import { createRoot } from 'react-dom/client';
 import { AppLink, navigate, useLocation } from './shared/router.jsx';
 import Icon from './components/ui/Icon.jsx';
 import './styles.css';
+import './viewport.css';
 
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage.jsx'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage.jsx'));
 
 function Header({ activeRoute }) {
   return (
-    <>
-      <header className="topbar">
-        <AppLink className="brand" to="/despesas" aria-label="Expenses, cadastro de despesas">
-          <span className="brand-mark" aria-hidden="true">e</span>
-          <span>expenses<span className="brand-period">.</span></span>
-        </AppLink>
-        <span className="topbar-note"><span className="status-dot" /> Seu espaço financeiro</span>
-      </header>
+    <header className="topbar">
+      <AppLink className="brand" to="/despesas" aria-label="Expenses, cadastro de despesas">
+        <span className="brand-mark" aria-hidden="true">e</span>
+        <span>expenses<span className="brand-period">.</span></span>
+      </AppLink>
       <nav className="main-nav" aria-label="Navegação principal">
         <AppLink className={`nav-link${activeRoute === '/despesas' ? ' is-active' : ''}`} to="/despesas" aria-current={activeRoute === '/despesas' ? 'page' : undefined}>
           <Icon name="entry" /> Registrar despesas
@@ -25,7 +23,8 @@ function Header({ activeRoute }) {
           <Icon name="overview" /> Gastos consolidados
         </AppLink>
       </nav>
-    </>
+      <span className="topbar-note"><span className="status-dot" /> Seu espaço financeiro</span>
+    </header>
   );
 }
 

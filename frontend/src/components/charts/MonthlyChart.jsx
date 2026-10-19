@@ -1,17 +1,27 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatCompactMoney, formatMoney, formatMonth } from '../../shared/format.js';
 
-const WIDTH = 660;
-const HEIGHT = 258;
 const PAD = { top: 18, right: 14, bottom: 43, left: 76 };
 
 export default function MonthlyChart({ totals, isUpdating }) {
   const [activeIndex, setActiveIndex] = useState(null);
+  const containerRef = useRef(null);
+  const [width, setWidth] = useState(660);
+  const height = Math.round(Math.min(258, Math.max(180, width * .46)));
+
+  useEffect(() => {
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry.contentRect.width > 0) setWidth(Math.max(280, Math.round(entry.contentRect.width)));
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   const chartData = useMemo(() => {
     const maxAmount = Math.max(0, ...totals.map((item) => Number(item.amount_due)));
     const scaleMax = maxAmount > 0 ? maxAmount * 1.15 : 1;
-    const plotWidth = WIDTH - PAD.left - PAD.right;
-    const plotHeight = HEIGHT - PAD.top - PAD.bottom;
+    const plotWidth = width - PAD.left - PAD.right;
+    const plotHeight = height - PAD.top - PAD.bottom;
     const slotWidth = plotWidth / Math.max(totals.length, 1);
     const bars = totals.map((item, index) => ({
       ...item,
@@ -27,22 +37,22 @@ export default function MonthlyChart({ totals, isUpdating }) {
       value: scaleMax * (1 - index / 3),
     }));
     return { bars, plotHeight, slotWidth, ticks };
-  }, [totals]);
+  }, [totals, width, height]);
 
   const activeBar = activeIndex === null ? null : chartData.bars[activeIndex];
-  const labelEvery = totals.length > 8 ? 2 : 1;
+  const labelEvery = Math.max(1, Math.ceil(totals.length / Math.max(2, Math.floor((width - PAD.left - PAD.right) / 65))));
 
   return (
-    <div className={`chart-visual${isUpdating ? ' is-updating' : ''}`}>
+    <div ref={containerRef} className={`chart-visual${isUpdating ? ' is-updating' : ''}`}>
       <svg
         className="monthly-chart"
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        viewBox={`0 0 ${width} ${height}`}
         role="group"
         aria-label="Gráfico de barras dos valores de cobranças por mês. Selecione ou aponte para uma barra para consultar o valor."
       >
         {chartData.ticks.map((tick, index) => (
           <g key={index} aria-hidden="true">
-            <line x1={PAD.left} x2={WIDTH - PAD.right} y1={tick.y} y2={tick.y} className="chart-gridline" />
+            <line x1={PAD.left} x2={width - PAD.right} y1={tick.y} y2={tick.y} className="chart-gridline" />
             <text x={PAD.left - 10} y={tick.y + 4} className="chart-y-label" textAnchor="end">{formatCompactMoney(tick.value)}</text>
           </g>
         ))}
@@ -58,12 +68,12 @@ export default function MonthlyChart({ totals, isUpdating }) {
             onBlur={() => setActiveIndex(null)}
           >
             <rect x={bar.slotX} y={PAD.top} width={chartData.slotWidth} height={chartData.plotHeight} className="chart-bar-hit-area" />
-            <rect x={bar.x - bar.width / 2} y={HEIGHT - PAD.bottom - bar.height} width={bar.width} height={bar.height} rx="5" className="monthly-bar" />
+            <rect x={bar.x - bar.width / 2} y={height - PAD.bottom - bar.height} width={bar.width} height={bar.height} rx="5" className="monthly-bar" />
             <title>{formatMonth(bar.month)} · {formatMoney(bar.amount_due)}</title>
           </g>
         ))}
         {chartData.bars.filter((_, index) => index % labelEvery === 0 || index === chartData.bars.length - 1).map((bar) => (
-          <text key={bar.month} x={bar.x} y={HEIGHT - 13} className="chart-x-label" textAnchor="middle" aria-hidden="true">
+          <text key={bar.month} x={bar.x} y={height - 13} className="chart-x-label" textAnchor="middle" aria-hidden="true">
             {formatMonth(bar.month)}
           </text>
         ))}

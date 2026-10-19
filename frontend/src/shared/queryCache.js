@@ -74,7 +74,9 @@ function waitBeforeRetry(signal) {
 async function fetchQuery(entry, queryFn) {
   // A promise backed by an aborted controller cannot satisfy a new subscriber.
   // Do not deduplicate against it; start a fresh request instead.
-  if (entry.promise && !entry.controller?.signal.aborted) return entry.promise;
+  // The original caller publishes errors in the snapshot. Deduplicated callers
+  // must also resolve safely, rather than expose the raw rejected request.
+  if (entry.promise && !entry.controller?.signal.aborted) return entry.promise.catch(() => undefined);
 
   const version = ++entry.requestVersion;
   const controller = new AbortController();
