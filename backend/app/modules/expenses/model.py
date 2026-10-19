@@ -83,3 +83,23 @@ class ExpenseInstallment(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
     expense: Mapped[Expense] = relationship(back_populates="installments")
+
+
+class ExpenseImportSource(Base):
+    """Rastreia linhas de origem para tornar a importação repetível sem duplicatas."""
+
+    __tablename__ = "expense_import_sources"
+    __table_args__ = (
+        UniqueConstraint("source_key", name="expense_import_sources_source_key_unique"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"), primary_key=True
+    )
+    source_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    expense_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("expenses.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

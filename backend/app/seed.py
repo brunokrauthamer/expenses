@@ -26,6 +26,7 @@ CATEGORIES = (
     "Viagem",
     "Boletos",
     "Moradia",
+    "Itens para casa",
 )
 
 PAYMENT_METHODS = ("PIX", "Cartão de Crédito")
