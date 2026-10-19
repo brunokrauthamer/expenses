@@ -1,12 +1,14 @@
 # Contexto do projeto Expenses
 
-Atualizado em 18/10/2026. Este documento resume decisões e o estado observado. Em novos chats, confira o código, o Git e as migrações antes de assumir que nada mudou.
+Atualizado em 19/10/2026. Este documento resume decisões e o estado observado. Em novos chats, confira o código, o Git e as migrações antes de assumir que nada mudou.
 
 ## Objetivo e preferências
 
 Aplicação web simples de controle de despesas pessoais. O usuário está desenvolvendo seu primeiro software com ajuda de um agente de programação e prefere explicações claras. Priorizar ferramentas gratuitas, evitar serviços pagos e não acrescentar funcionalidades sem solicitação. Não expor segredos nem executar comandos destrutivos sem autorização. O usuário solicitou execução dos testes disponíveis e correção de erros ao implementar mudanças.
 
-A interface deve ser simples, responsiva e agradável, com visual moderno, cores leves, transições e animações suaves. A cor verde está proibida. Usar nomes em inglês para tabelas e colunas do banco.
+A interface deve ser simples, responsiva e agradável, com aparência de aplicativo financeiro profissional: base clara, tons neutros, destaque para ações, tipografia legível, ícones consistentes e poucos elementos decorativos. A cor verde está proibida. Respeitar a preferência por movimento reduzido. Usar nomes em inglês para tabelas e colunas do banco.
+
+Priorizar componentes e funções reutilizáveis, evitando renderizações e chamadas à API desnecessárias. Preservar as regras financeiras, integrações e dados reais; não apresentar controles sem função como se estivessem implementados. Manter português brasileiro, formatos locais de data e moeda, contraste, foco visível, navegação por teclado e experiência adequada ao celular.
 
 ## Organização
 
@@ -15,8 +17,11 @@ O projeto fica em `C:\Users\bruno\Documents\ChatGPT\expenses` e reúne frontend 
 ```text
 expenses/
   frontend/               React, Vite e CSS
-    src/App.jsx           Interface e lógica atual
-    src/main.jsx          Entrada do React
+    src/main.jsx          Navegação, layout e entrada do React
+    src/pages/            Cadastro e gastos consolidados
+    src/components/       Painéis, estados, controles e gráficos SVG
+    src/services/         Cliente HTTP compartilhado
+    src/shared/           Cache, rotas, referências e formatação
     src/styles.css        Estilos e responsividade
   backend/                FastAPI, SQLAlchemy, Alembic e PostgreSQL
     app/config.py         Leitura de configuração
@@ -33,9 +38,19 @@ O backend segue um monólito modular. Cada domínio tem arquivos `model.py`, `sc
 
 ## Estado funcional
 
-O frontend permite cadastrar descrição, valor, categoria e data, listar e excluir despesas e calcular o total. Usa estado React em memória: os dados são perdidos ao recarregar a página. As categorias estão definidas diretamente em `App.jsx`. O frontend ainda não se comunica com o backend, não oferece meio de pagamento, edição, filtro por mês nem busca.
+O frontend possui navegação por History API entre `/despesas` e `/consolidado`, com Header e Footer compartilhados e carregamento tardio das telas. O cadastro usa `POST /expenses`, consulta categorias e meios de pagamento no banco, permite compras à vista e parceladas e apresenta até dez compras recentes, uma linha por compra, com indicação do parcelamento. Os registros persistem no banco após recarregar a página. Os filtros do consolidado ficam na URL.
 
-O backend possui uma API de despesas e estrutura de banco separada. Os routers de categorias e meios de pagamento existem, mas ainda não possuem rotas implementadas. Não há seed de categorias ou meios de pagamento nas migrações. O usuário deseja que as categorias do dropdown venham do banco futuramente. A API de despesas também gera e consulta cobranças de gastos parcelados.
+Na lista de compras recentes há ações de edição e exclusão. A edição preenche o formulário, muda sutilmente a cor do painel para evidenciar o modo de edição e usa `PUT /expenses/{id}`; há opção de cancelar. A exclusão pede confirmação em um modal sobreposto, mostra a descrição e avisa quando todas as parcelas serão removidas. É possível cancelar pelo botão, pela tecla Escape ou pelo fundo; falhas aparecem no modal. O formulário exibe rótulos e validações junto aos campos, além de mensagens de sucesso ou erro.
+
+O campo de valor recebe algarismos como centavos e posiciona a vírgula automaticamente: digitar `107643` resulta em `R$ 1.076,43`. A função reutilizável `formatAmountInput` fica em `frontend/src/shared/format.js`. O prefixo `R$` ocupa espaço próprio em um contêiner flexível para evitar sobreposição ao valor, inclusive no celular.
+
+O consolidado usa `GET /expenses/summary` para apresentar total, evolução mensal e valores por categoria filtrados por período, categoria, meio de pagamento e busca. Os valores de compras parceladas entram pelo valor de cada parcela no mês de vencimento; representam cobranças, não pagamentos confirmados. O gráfico de evolução mensal é de barras, conforme a solicitação mais recente. Os gráficos SVG são responsivos, atualizados pelos filtros e oferecem valores por interação e tabelas acessíveis; as transições respeitam movimento reduzido. Os filtros ativos podem ser removidos individualmente ou limpos, e o período pode ser escolhido por atalhos ou intervalo personalizado.
+
+O cliente HTTP usa `/api` por padrão, com opção de configurar `VITE_API_BASE_URL` no ambiente de compilação. No desenvolvimento e no preview, o Vite encaminha `/api` ao endereço de `BACKEND_PROXY_TARGET` (padrão `http://127.0.0.1:8000`) e remove o prefixo antes de enviar ao backend. As variáveis e exemplos estão em `frontend/.env.example` e `frontend/README.md`. Configurações `VITE_` são públicas no navegador e não devem conter credenciais. O proxy do Vite não serve como proxy de produção: a hospedagem deve encaminhar `/api` ao backend removendo o prefixo, ou definir uma URL pública de API na compilação; URLs de outra origem exigem CORS, que o backend ainda não configura. A hospedagem também deve encaminhar as rotas da interface para `index.html`. Ver chamadas a `localhost:5173/api/...` no navegador é esperado quando o proxy está ativo. Se a resposta for HTML da SPA em vez de JSON, conferir o endereço, o proxy e reiniciar o Vite; o cliente identifica esse caso e usa tempo limite de 15 segundos para evitar carregamento indefinido.
+
+O cache compartilhado deduplica consultas, mantém referências por 30 minutos e resultados por 2 minutos e cancela leituras sem observadores. Cadastro e edição atualizam a lista em cache e invalidam o consolidado; exclusão invalida a lista e o consolidado. A busca do consolidado usa debounce, e o período personalizado é aplicado explicitamente para evitar requisições intermediárias desnecessárias.
+
+O backend oferece GETs para categorias e meios de pagamento, uma lista de compras recentes sem duplicar parcelas e um resumo agregado por mês/categoria. A listagem paginada aceita período inclusivo de até 120 meses, categoria e meio de pagamento em combinação com os filtros existentes. O seeder é um comando separado. Em instalações sem dados de referência, executá-lo conforme `backend/README.md` antes de usar o cadastro.
 
 ### API de despesas
 
@@ -61,14 +76,14 @@ As migrações do código e do PostgreSQL local terminam em `20261018_0004` (`ex
 
 ## Execução local
 
-No frontend, a partir de `frontend`, com Node.js 20.19+ ou 22.12+ e pnpm:
+No primeiro uso, inicie o PostgreSQL, configure o backend e execute `python -m app.seed` a partir de `backend` para inserir as categorias e os meios de pagamento iniciais. Mantenha o FastAPI em execução enquanto usa a interface. Em seguida, a partir de `frontend`, com Node.js 20.19+ ou 22.12+ e pnpm:
 
 ```powershell
 pnpm install
 pnpm dev
 ```
 
-Abrir o endereço informado pelo Vite, normalmente `http://localhost:5173`. Para gerar o build: `pnpm build`.
+Abrir o endereço informado pelo Vite, normalmente `http://localhost:5173`. O Vite encaminha `/api` ao FastAPI na porta 8000. Para gerar o build: `pnpm build`. Node e pnpm não estavam disponíveis no shell desta implementação, portanto não foi possível executar o build.
 
 No backend, a partir de `backend`, com Python e PostgreSQL configurados:
 
@@ -89,13 +104,13 @@ Para os testes do backend:
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Os testes usam SQLite em memória, não o PostgreSQL local. Após a implementação dos parcelamentos, 23 testes do backend passaram. A migração Alembic foi aplicada ao PostgreSQL local e `20261018_0004` foi confirmado como revisão atual. O frontend não declara script de testes em `package.json`.
+Os testes usam SQLite em memória, não o PostgreSQL local. A suíte tem 27 testes e cobre também referências, compras recentes únicas, totais mensais e por categoria, filtros combinados e intervalos vazios ou inválidos. Na validação anterior desta conversa, os 27 testes passaram; a suíte do backend também foi compilada. O frontend não declara script de testes. As alterações recentes de interface, modal e gráfico de barras não tiveram build nem verificação visual concluídos nesta sessão: Node e pnpm não estavam disponíveis no shell e não havia navegador disponível para automação. Validar esses fluxos em desktop e celular quando as ferramentas estiverem acessíveis. A migração Alembic registrada é `20261018_0004`, sem alterações nestas melhorias de frontend.
 
 ## Git e GitHub
 
-Frontend e backend ficam no mesmo repositório Git. O repositório GitHub `brunokrauthamer/expenses` foi criado pelo usuário e o remoto `origin` aponta para `https://github.com/brunokrauthamer/expenses.git`. A branch atual é `master`, configurada para acompanhar `origin/master`. O commit inicial foi criado e enviado: `65e1b5c` (`Initial commit`).
+Frontend e backend ficam no mesmo repositório Git. O repositório GitHub `brunokrauthamer/expenses` foi criado pelo usuário e o remoto `origin` aponta para `https://github.com/brunokrauthamer/expenses.git`. O commit inicial `65e1b5c` (`Initial commit`) foi enviado para `master`.
 
-A identidade usada no commit veio do perfil GitHub conectado: Bruno Krauthamer (`brunokrauthamer@gmail.com`). Ela foi configurada localmente neste repositório. Futuras melhorias devem usar branches separadas e PRs para `master`; não há necessidade atual de branches principais `dev`, `qa` ou `staging`.
+A identidade usada no commit veio do perfil GitHub conectado: Bruno Krauthamer (`brunokrauthamer@gmail.com`). Ela foi configurada localmente neste repositório. A última branch registrada era `feat/frontend-navigation-consolidated`; confirme a branch e o estado de trabalho antes de agir, pois Git não estava disponível no shell nesta sessão. Futuras melhorias devem usar branches separadas e PRs para `master`. Não há necessidade de branches principais `dev`, `qa` ou `staging`.
 
 O primeiro push falhou sob a rede restrita do ambiente e foi concluído após autorização de rede. Se um push futuro falhar por conectividade, verificar a rede/autenticação GitHub e repetir com o acesso apropriado. A integração GitHub disponível no chat pode consultar recursos, mas não oferece criação de repositórios. Navegador e GitHub CLI não estavam disponíveis naquela sessão.
 

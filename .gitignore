@@ -3,6 +3,8 @@ dist/
 .pnpm-store/
 .venv/
 .env
+.env.*
+!.env.example
 backend/.env
 __pycache__/
 *.py[cod]

@@ -18,31 +18,19 @@ def list_expenses(
     page_size: int,
     month: str | None = None,
     search: str | None = None,
+    start_month: str | None = None,
+    end_month: str | None = None,
+    category_id: int | None = None,
+    payment_method_id: int | None = None,
 ) -> tuple[list[ExpenseInstallment], int]:
-    """Retorna cobranças paginadas, com filtros opcionais por mês e texto."""
-    filters = []
-    if month:
-        year, month_number = map(int, month.split("-"))
-        first_day = date(year, month_number, 1)
-        last_day = date(year, month_number, monthrange(year, month_number)[1])
-        filters.append(ExpenseInstallment.due_date.between(first_day, last_day))
-
-    normalized_search = search.strip() if search else ""
-    if normalized_search:
-        search_pattern = f"%{normalized_search}%"
-        filters.append(
-            or_(
-                Expense.description.ilike(search_pattern),
-                Category.name.ilike(search_pattern),
-                PaymentMethod.name.ilike(search_pattern),
-            )
-        )
-
-    from_expense = (
-        ExpenseInstallment.__table__
-        .join(Expense.__table__, ExpenseInstallment.expense_id == Expense.id)
-        .join(Category.__table__, Expense.category_id == Category.id)
-        .join(PaymentMethod.__table__, Expense.payment_method_id == PaymentMethod.id)
+    """Retorna cobranças paginadas, com filtros compartilhados com os relatórios."""
+    from_expense, filters = _filtered_expenses(
+        month=month,
+        search=search,
+        start_month=start_month,
+        end_month=end_month,
+        category_id=category_id,
+        payment_method_id=payment_method_id,
     )
     statement = (
         select(ExpenseInstallment)
@@ -63,6 +51,141 @@ def list_expenses(
         .where(*filters)
     )
     return list(database.scalars(statement)), database.scalar(count_statement) or 0
+
+
+def list_recent_expenses(database: Session, limit: int) -> list[Expense]:
+    """Retorna compras únicas, ordenadas pela data de cadastro."""
+    statement = (
+        select(Expense)
+        .order_by(Expense.created_at.desc(), Expense.id.desc())
+        .limit(limit)
+    )
+    return list(database.scalars(statement))
+
+
+def get_expense_summary(
+    database: Session,
+    start_month: str,
+    end_month: str,
+    search: str | None = None,
+    category_id: int | None = None,
+    payment_method_id: int | None = None,
+) -> dict[str, object]:
+    """Agrega uma única consulta por mês e categoria para alimentar o resumo e os gráficos."""
+    from_expense, filters = _filtered_expenses(
+        start_month=start_month,
+        end_month=end_month,
+        search=search,
+        category_id=category_id,
+        payment_method_id=payment_method_id,
+    )
+    month_expression = _month_expression(database.get_bind().dialect.name)
+    statement = (
+        select(
+            month_expression.label("month"),
+            Expense.category_id.label("category_id"),
+            func.sum(ExpenseInstallment.amount).label("amount_due"),
+        )
+        .select_from(from_expense)
+        .where(*filters)
+        .group_by(month_expression, Expense.category_id)
+        .order_by(month_expression, Expense.category_id)
+    )
+
+    month_amounts: dict[str, Decimal] = {}
+    category_amounts: dict[int, Decimal] = {}
+    for month, expense_category_id, amount_due in database.execute(statement):
+        month = str(month)[:7]
+        amount = Decimal(amount_due)
+        month_amounts[month] = month_amounts.get(month, Decimal("0.00")) + amount
+        expense_category_id = int(expense_category_id)
+        category_amounts[expense_category_id] = (
+            category_amounts.get(expense_category_id, Decimal("0.00")) + amount
+        )
+
+    months = _months_between(start_month, end_month)
+    monthly_totals = [
+        {"month": month, "amount_due": month_amounts.get(month, Decimal("0.00"))}
+        for month in months
+    ]
+    category_totals = [
+        {"category_id": expense_category_id, "amount_due": amount}
+        for expense_category_id, amount in sorted(
+            category_amounts.items(), key=lambda item: (-item[1], item[0])
+        )
+    ]
+    total_amount_due = sum(
+        (row["amount_due"] for row in monthly_totals), Decimal("0.00")
+    )
+    return {
+        "total_amount_due": total_amount_due,
+        "monthly_totals": monthly_totals,
+        "category_totals": category_totals,
+    }
+
+
+def _filtered_expenses(
+    month: str | None = None,
+    search: str | None = None,
+    start_month: str | None = None,
+    end_month: str | None = None,
+    category_id: int | None = None,
+    payment_method_id: int | None = None,
+):
+    filters = []
+    if month:
+        start_month = end_month = month
+    if start_month and end_month:
+        first_day = date.fromisoformat(f"{start_month}-01")
+        last_year, last_month = map(int, end_month.split("-"))
+        last_day = date(last_year, last_month, monthrange(last_year, last_month)[1])
+        filters.append(ExpenseInstallment.due_date.between(first_day, last_day))
+    if category_id is not None:
+        filters.append(Expense.category_id == category_id)
+    if payment_method_id is not None:
+        filters.append(Expense.payment_method_id == payment_method_id)
+
+    normalized_search = search.strip() if search else ""
+    if normalized_search:
+        search_pattern = f"%{normalized_search}%"
+        filters.append(
+            or_(
+                Expense.description.ilike(search_pattern),
+                Category.name.ilike(search_pattern),
+                PaymentMethod.name.ilike(search_pattern),
+            )
+        )
+
+    from_expense = (
+        ExpenseInstallment.__table__
+        .join(Expense.__table__, ExpenseInstallment.expense_id == Expense.id)
+        .join(Category.__table__, Expense.category_id == Category.id)
+        .join(PaymentMethod.__table__, Expense.payment_method_id == PaymentMethod.id)
+    )
+    return from_expense, filters
+
+
+def _month_expression(dialect: str):
+    """Extrai o mês usando a função nativa do PostgreSQL ou SQLite."""
+    from sqlalchemy import cast, String
+
+    if dialect == "sqlite":
+        return func.strftime("%Y-%m", ExpenseInstallment.due_date)
+    if dialect == "postgresql":
+        return func.to_char(ExpenseInstallment.due_date, "YYYY-MM")
+    return cast(ExpenseInstallment.due_date, String)
+
+
+def _months_between(start_month: str, end_month: str) -> list[str]:
+    start_year, start_number = map(int, start_month.split("-"))
+    end_year, end_number = map(int, end_month.split("-"))
+    start_index = start_year * 12 + start_number - 1
+    end_index = end_year * 12 + end_number - 1
+    months = []
+    for index in range(start_index, end_index + 1):
+        year, zero_based_month = divmod(index, 12)
+        months.append(f"{year:04d}-{zero_based_month + 1:02d}")
+    return months
 
 
 def create_expense(database: Session, data: ExpenseCreate) -> Expense:
