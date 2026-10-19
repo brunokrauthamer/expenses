@@ -29,6 +29,22 @@ python -m app.seed
 
 O seeder pode ser executado novamente; ele insere apenas os nomes ausentes.
 
+## Importar gastos de planilhas
+
+Depois de instalar as dependências e aplicar as migrações, deixe as planilhas mensais
+na pasta Downloads e confira a prévia com:
+
+    python -m app.import_expenses
+
+A prévia não altera o banco. Depois de conferir os itens, execute:
+
+    python -m app.import_expenses --apply
+
+O importador também aceita caminhos de arquivos .xlsx após o comando. Cada linha de
+origem é registrada para evitar a duplicação quando os mesmos arquivos são enviados
+novamente. As compras iniciadas nos arquivos são salvas com os valores observados
+nas primeiras parcelas; os outros meses são gerados a partir da primeira cobrança.
+
 ## Gastos e parcelamentos
 
 `POST /expenses` e `PUT /expenses/{expense_id}` recebem os campos atuais `description`, `amount`, `expense_date`, `category_id` e `payment_method_id`, além de:
