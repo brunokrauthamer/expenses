@@ -40,7 +40,15 @@ O seeder pode ser executado novamente; ele insere apenas os nomes ausentes.
 
 `amount` representa o total quando `amount_type` é `total`, ou o valor de cada parcela quando é `installment`. O total da compra fica salvo em `expenses.amount`. Para um total parcelado, as parcelas após a primeira usam a divisão arredondada para baixo a duas casas; a primeira recebe o restante, para que a soma coincida com o total. Por exemplo, R$ 100,01 em 3 vezes resulta em R$ 33,35, R$ 33,33 e R$ 33,33. As datas seguintes mantêm o dia da primeira cobrança, usando o último dia do mês quando o dia original não existe.
 
-`GET /expenses` lista cobranças programadas, não compras únicas. Com `month=AAAA-MM`, retorna somente cobranças daquele mês; sem `month`, retorna todas as cobranças. `amount_due` é o valor da parcela daquela linha e `total_amount` é o total da compra. O campo `id` continua sendo o gasto, utilizado nas rotas PUT e DELETE; `installment_id` identifica a cobrança. `total` na paginação conta cobranças.
+`GET /expenses` lista cobranças programadas, não compras únicas. Com `month=AAAA-MM`, retorna somente cobranças daquele mês; `start_month` e `end_month` filtram um intervalo inclusivo de até 120 meses. O intervalo não pode ser enviado junto com `month`. Também aceita `category_id` e `payment_method_id`; esses parâmetros podem ser combinados com busca e período. `amount_due` é o valor da parcela daquela linha e `total_amount` é o total da compra. O campo `id` continua sendo o gasto, utilizado nas rotas PUT e DELETE; `installment_id` identifica a cobrança. `total` na paginação conta cobranças.
+
+Para o frontend:
+
+- `GET /categories` e `GET /payment-methods` retornam as referências em ordem alfabética.
+- `GET /expenses/recent?limit=10` retorna compras únicas em ordem de cadastro mais recente (`created_at`, com o ID como desempate). O limite aceito é de 1 a 50.
+- `GET /expenses/summary` exige `start_month` e `end_month` (`AAAA-MM`) e aceita também `category_id`, `payment_method_id` e `search`. Retorna `total_amount_due`, uma lista de `monthly_totals` e outra de `category_totals`. O total é a soma das cobranças dentro dos filtros; meses sem cobranças são preenchidos com zero. O período aceita até 120 meses inclusivos.
+
+A consulta de resumo agrega os valores de `expense_installments.amount` pelo mês de vencimento e pela categoria em uma consulta ao banco. Assim, o total e os gráficos usam o mesmo recorte sem baixar cobranças em páginas sequenciais nem somar o preço total da compra em todos os meses.
 
 Uma requisição parcelada pode usar, por exemplo, `"amount": "1200.00"`, `"amount_type": "total"`, `"payment_type": "installments"` e `"installment_count": 6`. A mesma compra pode usar `"amount": "200.00"` e `"amount_type": "installment"`.
 

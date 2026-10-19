@@ -1,0 +1,86 @@
+import { useMemo, useState } from 'react';
+import { formatCompactMoney, formatMoney, formatMonth } from '../../shared/format.js';
+
+const WIDTH = 660;
+const HEIGHT = 258;
+const PAD = { top: 18, right: 14, bottom: 43, left: 76 };
+
+export default function MonthlyChart({ totals, isUpdating }) {
+  const [activeIndex, setActiveIndex] = useState(null);
+  const chartData = useMemo(() => {
+    const maxAmount = Math.max(0, ...totals.map((item) => Number(item.amount_due)));
+    const scaleMax = maxAmount > 0 ? maxAmount * 1.15 : 1;
+    const plotWidth = WIDTH - PAD.left - PAD.right;
+    const plotHeight = HEIGHT - PAD.top - PAD.bottom;
+    const slotWidth = plotWidth / Math.max(totals.length, 1);
+    const bars = totals.map((item, index) => ({
+      ...item,
+      value: Number(item.amount_due),
+      x: PAD.left + slotWidth * index + slotWidth / 2,
+      y: PAD.top + plotHeight * (1 - Number(item.amount_due) / scaleMax),
+      height: plotHeight * (Number(item.amount_due) / scaleMax),
+      width: Math.min(slotWidth * 0.62, 38),
+      slotX: PAD.left + slotWidth * index,
+    }));
+    const ticks = [0, 1, 2, 3].map((index) => ({
+      y: PAD.top + (plotHeight * index) / 3,
+      value: scaleMax * (1 - index / 3),
+    }));
+    return { bars, plotHeight, slotWidth, ticks };
+  }, [totals]);
+
+  const activeBar = activeIndex === null ? null : chartData.bars[activeIndex];
+  const labelEvery = totals.length > 8 ? 2 : 1;
+
+  return (
+    <div className={`chart-visual${isUpdating ? ' is-updating' : ''}`}>
+      <svg
+        className="monthly-chart"
+        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        role="group"
+        aria-label="Gráfico de barras dos valores de cobranças por mês. Selecione ou aponte para uma barra para consultar o valor."
+      >
+        {chartData.ticks.map((tick, index) => (
+          <g key={index} aria-hidden="true">
+            <line x1={PAD.left} x2={WIDTH - PAD.right} y1={tick.y} y2={tick.y} className="chart-gridline" />
+            <text x={PAD.left - 10} y={tick.y + 4} className="chart-y-label" textAnchor="end">{formatCompactMoney(tick.value)}</text>
+          </g>
+        ))}
+        {chartData.bars.map((bar, index) => (
+          <g
+            key={bar.month}
+            className={`chart-bar${activeIndex === index ? ' is-active' : ''}`}
+            tabIndex="0"
+            role="button"
+            aria-label={`${formatMonth(bar.month)}: ${formatMoney(bar.amount_due)}`}
+            onPointerEnter={() => setActiveIndex(index)}
+            onFocus={() => setActiveIndex(index)}
+            onBlur={() => setActiveIndex(null)}
+          >
+            <rect x={bar.slotX} y={PAD.top} width={chartData.slotWidth} height={chartData.plotHeight} className="chart-bar-hit-area" />
+            <rect x={bar.x - bar.width / 2} y={HEIGHT - PAD.bottom - bar.height} width={bar.width} height={bar.height} rx="5" className="monthly-bar" />
+            <title>{formatMonth(bar.month)} · {formatMoney(bar.amount_due)}</title>
+          </g>
+        ))}
+        {chartData.bars.filter((_, index) => index % labelEvery === 0 || index === chartData.bars.length - 1).map((bar) => (
+          <text key={bar.month} x={bar.x} y={HEIGHT - 13} className="chart-x-label" textAnchor="middle" aria-hidden="true">
+            {formatMonth(bar.month)}
+          </text>
+        ))}
+      </svg>
+      <p className="chart-tooltip" role="status" aria-live="polite">
+        {activeBar
+          ? <><strong>{formatMonth(activeBar.month)}</strong><span>{formatMoney(activeBar.amount_due)}</span></>
+          : 'Aponte para uma barra ou use a tecla Tab para ver o valor.'}
+      </p>
+      <details className="chart-data-table">
+        <summary>Ver valores em tabela</summary>
+        <table>
+          <caption>Valor das cobranças por mês no período selecionado</caption>
+          <thead><tr><th>Mês</th><th>Valor</th></tr></thead>
+          <tbody>{totals.map((item) => <tr key={item.month}><th scope="row">{formatMonth(item.month)}</th><td>{formatMoney(item.amount_due)}</td></tr>)}</tbody>
+        </table>
+      </details>
+    </div>
+  );
+}

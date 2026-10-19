@@ -101,3 +101,19 @@ class ExpensePage(BaseModel):
     page_size: int
     total: int
     total_pages: int
+
+
+class ExpenseMonthTotal(BaseModel):
+    month: str
+    amount_due: Decimal
+
+
+class ExpenseCategoryTotal(BaseModel):
+    category_id: int
+    amount_due: Decimal
+
+
+class ExpenseSummaryResponse(BaseModel):
+    total_amount_due: Decimal
+    monthly_totals: list[ExpenseMonthTotal]
+    category_totals: list[ExpenseCategoryTotal]

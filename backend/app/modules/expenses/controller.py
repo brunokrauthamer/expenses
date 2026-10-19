@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
@@ -6,9 +8,17 @@ from app.modules.expenses.schema import (
     ExpenseInstallmentResponse,
     ExpensePage,
     ExpenseResponse,
+    ExpenseSummaryResponse,
     ExpenseUpdate,
 )
-from app.modules.expenses.service import create_expense, delete_expense, list_expenses, update_expense
+from app.modules.expenses.service import (
+    create_expense,
+    delete_expense,
+    get_expense_summary,
+    list_expenses,
+    list_recent_expenses,
+    update_expense,
+)
 from app.shared.dependencies import get_db
 from app.shared.exceptions import ResourceNotFoundError
 
@@ -20,10 +30,25 @@ def get_expenses(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     month: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    start_month: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    end_month: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     search: str | None = Query(default=None, max_length=100),
+    category_id: int | None = Query(default=None, ge=1),
+    payment_method_id: int | None = Query(default=None, ge=1),
     database: Session = Depends(get_db),
 ) -> ExpensePage:
-    installments, total = list_expenses(database, page, page_size, month, search)
+    _validate_month_range(month, start_month, end_month)
+    installments, total = list_expenses(
+        database,
+        page,
+        page_size,
+        month,
+        search,
+        start_month,
+        end_month,
+        category_id,
+        payment_method_id,
+    )
     return ExpensePage(
         items=[
             ExpenseInstallmentResponse(
@@ -48,6 +73,67 @@ def get_expenses(
         total=total,
         total_pages=(total + page_size - 1) // page_size,
     )
+
+
+@router.get("/recent", response_model=list[ExpenseResponse])
+def get_recent_expenses(
+    limit: int = Query(default=10, ge=1, le=50),
+    database: Session = Depends(get_db),
+) -> list[ExpenseResponse]:
+    return list_recent_expenses(database, limit)
+
+
+@router.get("/summary", response_model=ExpenseSummaryResponse)
+def get_expenses_summary(
+    start_month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    end_month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    search: str | None = Query(default=None, max_length=100),
+    category_id: int | None = Query(default=None, ge=1),
+    payment_method_id: int | None = Query(default=None, ge=1),
+    database: Session = Depends(get_db),
+) -> ExpenseSummaryResponse:
+    _validate_month_range(None, start_month, end_month)
+    return get_expense_summary(
+        database, start_month, end_month, search, category_id, payment_method_id
+    )
+
+
+def _validate_month_range(
+    month: str | None, start_month: str | None, end_month: str | None
+) -> None:
+    if (start_month is None) != (end_month is None):
+        raise HTTPException(
+            status_code=422,
+            detail="Informe os meses inicial e final do período.",
+        )
+    if month is not None and start_month is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="Use o filtro de mês ou o intervalo, não os dois.",
+        )
+    values = [value for value in (month, start_month, end_month) if value is not None]
+    try:
+        parsed = [datetime.strptime(value, "%Y-%m") for value in values]
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail="Informe meses válidos no formato AAAA-MM.",
+        ) from error
+    if len(parsed) == 2 and parsed[0] > parsed[1]:
+        raise HTTPException(
+            status_code=422,
+            detail="O mês inicial não pode ser posterior ao mês final.",
+        )
+    period_length = (
+        (parsed[1].year - parsed[0].year) * 12 + parsed[1].month - parsed[0].month
+        if len(parsed) == 2
+        else 0
+    )
+    if period_length >= 120:
+        raise HTTPException(
+            status_code=422,
+            detail="O período não pode exceder 120 meses.",
+        )
 
 
 @router.post("", response_model=ExpenseResponse, status_code=status.HTTP_201_CREATED)
