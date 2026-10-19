@@ -35,16 +35,16 @@ O backend segue um monólito modular. Cada domínio tem arquivos `model.py`, `sc
 
 O frontend permite cadastrar descrição, valor, categoria e data, listar e excluir despesas e calcular o total. Usa estado React em memória: os dados são perdidos ao recarregar a página. As categorias estão definidas diretamente em `App.jsx`. O frontend ainda não se comunica com o backend, não oferece meio de pagamento, edição, filtro por mês nem busca.
 
-O backend possui uma API de despesas e estrutura de banco separada. Os routers de categorias e meios de pagamento existem, mas ainda não possuem rotas implementadas. Não há seed de categorias ou meios de pagamento nas migrações. O usuário deseja que as categorias do dropdown venham do banco futuramente.
+O backend possui uma API de despesas e estrutura de banco separada. Os routers de categorias e meios de pagamento existem, mas ainda não possuem rotas implementadas. Não há seed de categorias ou meios de pagamento nas migrações. O usuário deseja que as categorias do dropdown venham do banco futuramente. A API de despesas também gera e consulta cobranças de gastos parcelados.
 
 ### API de despesas
 
-- `GET /expenses`: paginação por `page` (padrão 1) e `page_size` (padrão 20, máximo 100); filtros opcionais `month` no formato `AAAA-MM` e `search`. A busca procura descrição, nome da categoria e nome do meio de pagamento, sem diferenciar maiúsculas de minúsculas.
-- `POST /expenses`: cria uma despesa.
-- `PUT /expenses/{expense_id}`: atualiza a despesa com todos os campos exigidos na criação.
-- `DELETE /expenses/{expense_id}`: exclui e retorna HTTP 204.
+- `GET /expenses`: lista cobranças paginadas (`page` padrão 1, `page_size` padrão 20 e máximo 100). `month` no formato `AAAA-MM` filtra pela data da cobrança; sem filtro, retorna todas as cobranças programadas. `search` procura descrição, nome da categoria e nome do meio de pagamento sem diferenciar maiúsculas de minúsculas.
+- `POST /expenses`: cria uma compra à vista ou parcelada e gera suas cobranças.
+- `PUT /expenses/{expense_id}`: substitui os dados do gasto; altera o cronograma inteiro quando muda valor, datas ou quantidade.
+- `DELETE /expenses/{expense_id}`: exclui o gasto e suas cobranças; retorna HTTP 204.
 
-Na criação e edição, enviar `description`, `amount`, `expense_date`, `category_id` e `payment_method_id`. O valor deve ser positivo e as referências devem existir. A listagem retorna `items`, `page`, `page_size`, `total` e `total_pages`; `total` é a quantidade de registros, não a soma dos valores. A documentação interativa do FastAPI fica em `/docs` quando o servidor está em execução.
+Na criação e edição, enviar `description`, `amount`, `expense_date`, `category_id` e `payment_method_id`. `payment_type` aceita `one_time` (padrão) ou `installments`; `installment_count` aceita de 1 a 1200 e exige ao menos 2 para parcelados; `amount_type` aceita `total` (padrão) ou `installment`; `first_installment_date` é opcional e usa `expense_date` como padrão. Em parcelamentos, `amount` pode representar o total ou o valor de cada parcela conforme `amount_type`. A resposta mensal usa `amount_due` para a cobrança do mês e `total_amount` para o total da compra. O `id` representa o gasto e `installment_id` representa uma cobrança. `total` conta cobranças, nunca soma valores. A documentação interativa do FastAPI fica em `/docs` quando o servidor está em execução.
 
 ## Banco de dados
 
@@ -54,9 +54,10 @@ Tabelas definidas pelo código e migrações:
 
 - `categories`: `id` BIGINT e `name` VARCHAR(50), obrigatório e único.
 - `payment_methods`: `id` INTEGER e `name` VARCHAR(50), obrigatório e único.
-- `expenses`: `id` BIGINT, `description` VARCHAR(120), `amount` NUMERIC(12,2) positivo, `expense_date` DATE, `category_id` BIGINT, `payment_method_id` INTEGER e `created_at` com fuso horário. As duas referências são obrigatórias e usam chaves estrangeiras com restrição de exclusão.
+- `expenses`: `id` BIGINT, `description` VARCHAR(120), `amount` NUMERIC(12,2) positivo (total da compra), `expense_date` DATE, `installment_count` INTEGER, `first_installment_date` DATE, `category_id` BIGINT, `payment_method_id` INTEGER e `created_at` com fuso horário. As referências são obrigatórias e usam chaves estrangeiras com restrição de exclusão.
+- `expense_installments`: `id` BIGINT, `expense_id` BIGINT (exclusão em cascata), `installment_number` INTEGER, `amount` NUMERIC(12,2) positivo e `due_date` DATE. Cada compra tem ao menos uma cobrança; o par `(expense_id, installment_number)` é único.
 
-As migrações são `20261017_0001` (categorias e despesas), `20261018_0002` (meios de pagamento e referência) e `20261018_0003` (IDs de meios de pagamento como INTEGER). Antes de aplicar em um banco com dados existentes, inspecione a migração 0002: ela adiciona uma coluna obrigatória sem preencher despesas já existentes. Confirme a revisão efetivamente aplicada no banco antes de declarar seu estado. O README do backend está parcialmente desatualizado quanto aos módulos e tabelas.
+As migrações do código e do PostgreSQL local terminam em `20261018_0004` (`expense_installments` e campos do cronograma). Ela foi aplicada partindo de `20261018_0003` e converte cada gasto preexistente em uma cobrança única. Uma verificação posterior não encontrou gastos com soma ou quantidade de parcelas inconsistente.
 
 ## Execução local
 
@@ -88,7 +89,7 @@ Para os testes do backend:
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Os testes usam SQLite em memória, não o PostgreSQL local. Em uma execução anterior foram relatados 6 testes aprovados e 83% de cobertura; esses números são históricos, não uma garantia do estado atual. O frontend não declara script de testes em `package.json`.
+Os testes usam SQLite em memória, não o PostgreSQL local. Após a implementação dos parcelamentos, 23 testes do backend passaram. A migração Alembic foi aplicada ao PostgreSQL local e `20261018_0004` foi confirmado como revisão atual. O frontend não declara script de testes em `package.json`.
 
 ## Git e GitHub
 

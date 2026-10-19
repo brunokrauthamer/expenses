@@ -1,6 +1,6 @@
 # Plano: cadastro de gastos parcelados no backend
 
-Data: 18/10/2026. Documento de planejamento; a funcionalidade ainda será implementada.
+Data: 18/10/2026. Backend implementado e migração aplicada ao PostgreSQL local.
 
 ## Objetivo
 
@@ -13,18 +13,17 @@ Exemplo: uma compra de R$ 1.200 em 6 parcelas, com primeira cobrança em novembr
 - A primeira parcela pode ter uma data diferente da data da compra. Quando não informada, usar a data da compra.
 - Editar ou excluir afeta o gasto inteiro e todas as parcelas, inclusive as de meses passados.
 
-As demais regras abaixo são propostas para orientar a implementação.
+As regras de valor, calendário e consulta abaixo foram implementadas conforme as especificações deste plano. A API limita o cronograma a 1200 parcelas para evitar a criação de cobranças desproporcionais.
 
 ## Estado atual verificado
 
 - O domínio fica em `backend/app/modules/expenses/`, separado em modelo, schemas, serviço e controller.
-- Cada registro de `expenses` possui um único `amount` e uma única `expense_date`.
-- `GET /expenses` filtra o mês usando `expense_date`, que representa a data do gasto. Assim, uma compra não aparece automaticamente nos meses das parcelas seguintes.
-- A API já oferece criação, edição completa por PUT, exclusão, busca e paginação.
-- A suíte em `backend/tests/test_expenses_api.py` contém seis testes. Ela usa SQLite em memória e não verifica as migrações do PostgreSQL.
+- `expenses.amount` guarda o total da compra e `expenses.expense_date` guarda sua data.
+- `expense_installments` guarda valor, número e data de cada cobrança; `GET /expenses` filtra pelo vencimento e retorna uma linha por cobrança.
+- Criação, PUT, exclusão, busca e paginação operam sobre o novo cronograma; mudanças de cronograma substituem as parcelas na mesma transação.
+- Os 23 testes da API usam SQLite em memória com integridade referencial ativada. Ainda não validam a migração contra um servidor PostgreSQL.
 - O frontend ainda não consome o backend, conforme `CONTEXTO.md`.
-- As migrações presentes terminam em `20261018_0003`. A revisão efetivamente aplicada ao PostgreSQL não foi consultada neste planejamento.
-- Já existem alterações locais em `CONTEXTO.md`, `backend/README.md` e um arquivo novo `backend/app/seed.py`. Preservá-las ao iniciar a implementação.
+- A migração `20261018_0004` é o head do histórico e foi aplicada ao PostgreSQL local após confirmar que ele estava na revisão `20261018_0003`.
 
 ## Modelo de dados proposto
 
@@ -40,7 +39,7 @@ Preservar os campos atuais e acrescentar:
 | --- | --- |
 | `amount` | Sempre o valor total normalizado da compra, independentemente do modo de entrada. Preservar `NUMERIC(12,2)`. |
 | `expense_date` | Data da compra. |
-| `installment_count` | Quantidade de cobranças; 1 para gasto à vista. |
+| `installment_count` | Quantidade de cobranças; de 1 a 1200, com 1 para gasto à vista. |
 | `first_installment_date` | Data da primeira cobrança. Para gasto à vista, igual a `expense_date`. |
 
 O tipo de pagamento pode ser derivado de `installment_count`: 1 significa à vista; 2 ou mais significa parcelado. Não é necessário persistir também um booleano que possa ficar inconsistente com a quantidade.
@@ -66,7 +65,7 @@ Preservar `description`, `amount`, `expense_date`, `category_id` e `payment_meth
 | Campo | Regra proposta |
 | --- | --- |
 | `payment_type` | `one_time` ou `installments`; padrão `one_time` para manter os cadastros antigos válidos. Não confundir com `payment_method_id`, que indica PIX, cartão etc. |
-| `installment_count` | Obrigatório e inteiro a partir de 2 quando parcelado. Para à vista, ausente ou 1. |
+| `installment_count` | Obrigatório e inteiro de 2 a 1200 quando parcelado. Para à vista, ausente ou 1. O limite evita cronogramas desproporcionais. |
 | `amount_type` | `total` ou `installment`; padrão `total`. À vista aceita somente `total`. |
 | `first_installment_date` | Opcional no parcelamento; padrão `expense_date`. Não pode ser anterior à compra. À vista aceita ausência ou a própria data da compra. |
 
@@ -92,7 +91,7 @@ Regras monetárias:
 
 - Usar `Decimal` ou centavos inteiros em todos os cálculos.
 - Quando a entrada for o valor da parcela, multiplicar pela quantidade para obter o total.
-- Quando a entrada for o total, dividir em centavos, atribuindo o resto à primeira parcela. R$ 100,01 em 3 vezes gera R$ 33,35, R$ 33,33 e R$ 33,33.
+- Quando a entrada for o total, dividir em centavos com arredondamento para baixo: `valor_das_demais = total // quantidade`; `primeira = total - (quantidade - 1) * valor_das_demais`. A primeira parcela recebe a diferença e todas as outras têm o mesmo valor. R$ 100,01 em 3 vezes gera R$ 33,35, R$ 33,33 e R$ 33,33; R$ 1.300 em 7 vezes gera R$ 185,74 e mais 6 parcelas de R$ 185,71.
 - Rejeitar total que gere alguma parcela de valor zero, combinações contraditórias, números fracionários de parcelas, valores fora da precisão do banco e cronogramas fora do intervalo de datas suportado. Retornar HTTP 422.
 - Não calcular juros automaticamente: o valor informado deve representar o total contratado ou a parcela contratada.
 
@@ -158,14 +157,14 @@ Criar uma nova migração após `20261018_0003`, sem reescrever o histórico:
 
 Preservar IDs e valores dos gastos existentes. Antes de aplicar ao banco local, verificar a revisão atual e validar a migração em um PostgreSQL de teste, com banco vazio e com registros anteriores à mudança. Os testes SQLite existentes não substituem essa verificação.
 
-## Etapas de implementação
+## Arquivos implementados
 
-1. Criar uma branch própria, preservando as alterações locais preexistentes.
-2. Atualizar `expenses/model.py`, relacionamentos e a nova migração Alembic. A tabela de parcelas pertence ao domínio de gastos; não exige um novo módulo independente.
-3. Atualizar `expenses/schema.py` com os campos de entrada, validações condicionais, resposta do gasto e resposta das cobranças.
-4. Implementar funções de normalização de valores e geração de vencimentos em `expenses/service.py`; adaptar criação, edição e exclusão com transações completas.
-5. Adaptar consulta, contagem e controller para a leitura de cobranças por mês.
-6. Atualizar e executar os testes, validar a migração no PostgreSQL de teste e atualizar README, exemplos da API e CONTEXTO.md com o estado implementado.
+- `backend/app/modules/expenses/model.py`: compra, cobrança e relacionamentos.
+- `backend/app/modules/expenses/schema.py`: validação de entrada e respostas da API.
+- `backend/app/modules/expenses/service.py` e `controller.py`: cronograma, CRUD e listagem mensal.
+- `backend/migrations/versions/20261018_0004_add_expense_installments.py`: migração de dados legados e nova tabela.
+- `backend/tests/`: fixtures com chaves estrangeiras e testes dos fluxos de parcelas.
+- `backend/README.md` e `CONTEXTO.md`: contratos, limites e estado atualizado.
 
 ## Critérios de aceite e testes
 
@@ -185,4 +184,4 @@ Preservar IDs e valores dos gastos existentes. Antes de aplicar ao banco local, 
 
 ## Limites desta entrega
 
-A implementação cobre o backend e sua documentação. Integração com frontend, fechamento de fatura, controle de pagamento realizado, recorrência, juros calculados e edição individual de parcelas ficam fora deste escopo.
+A implementação cobre o backend, seus testes, a documentação e o banco PostgreSQL local. Os 23 testes da suíte SQLite passaram; `alembic history` e `alembic current` confirmam `20261018_0004` como head e revisão aplicada. Uma consulta no PostgreSQL local confirmou que todos os gastos têm quantidade e soma de parcelas consistentes. A regra de divisão deixa as parcelas após a primeira iguais e arredondadas para baixo; a primeira recebe o restante. Integração com frontend, fechamento de fatura, controle de pagamento realizado, recorrência, juros calculados e edição individual de parcelas ficam fora deste escopo.

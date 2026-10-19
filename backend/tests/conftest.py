@@ -6,7 +6,7 @@ os.environ.setdefault(
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -23,6 +23,13 @@ def database() -> Session:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine, "connect")
+    def enable_sqlite_foreign_keys(connection, _record) -> None:
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(engine)
     testing_session = sessionmaker(bind=engine, autoflush=False, autocommit=False)
     session = testing_session()

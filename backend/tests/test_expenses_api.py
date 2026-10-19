@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.categories.model import Category
 from app.modules.expenses.model import Expense
+from app.modules.expenses.model import ExpenseInstallment
 from app.modules.payment_methods.model import PaymentMethod
 
 
@@ -30,10 +31,21 @@ def create_expense(
         description=description,
         amount=Decimal("25.50"),
         expense_date=expense_date,
+        installment_count=1,
+        first_installment_date=expense_date,
         category_id=category_id,
         payment_method_id=payment_method_id,
     )
     database.add(expense)
+    database.flush()
+    database.add(
+        ExpenseInstallment(
+            expense_id=expense.id,
+            installment_number=1,
+            amount=expense.amount,
+            due_date=expense_date,
+        )
+    )
     database.commit()
     database.refresh(expense)
     return expense
@@ -89,6 +101,8 @@ def test_create_expense(client: TestClient, database: Session) -> None:
     assert created is not None
     assert created.description == "Padaria"
     assert created.amount == Decimal("18.75")
+    assert response.json()["total_amount"] == "18.75"
+    assert response.json()["payment_type"] == "one_time"
 
 
 def test_update_expense(client: TestClient, database: Session) -> None:
@@ -125,6 +139,7 @@ def test_delete_expense(client: TestClient, database: Session) -> None:
 
     assert response.status_code == 204
     assert database.get(Expense, expense.id) is None
+    assert database.query(ExpenseInstallment).filter_by(expense_id=expense.id).count() == 0
 
 
 def test_create_expense_returns_not_found_for_invalid_references(client: TestClient) -> None:

@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from app.modules.expenses.schema import ExpenseCreate, ExpensePage, ExpenseResponse, ExpenseUpdate
+from app.modules.expenses.schema import (
+    ExpenseCreate,
+    ExpenseInstallmentResponse,
+    ExpensePage,
+    ExpenseResponse,
+    ExpenseUpdate,
+)
 from app.modules.expenses.service import create_expense, delete_expense, list_expenses, update_expense
 from app.shared.dependencies import get_db
 from app.shared.exceptions import ResourceNotFoundError
@@ -17,9 +23,26 @@ def get_expenses(
     search: str | None = Query(default=None, max_length=100),
     database: Session = Depends(get_db),
 ) -> ExpensePage:
-    expenses, total = list_expenses(database, page, page_size, month, search)
+    installments, total = list_expenses(database, page, page_size, month, search)
     return ExpensePage(
-        items=expenses,
+        items=[
+            ExpenseInstallmentResponse(
+                id=installment.expense_id,
+                installment_id=installment.id,
+                description=installment.expense.description,
+                expense_date=installment.expense.expense_date,
+                due_date=installment.due_date,
+                payment_type=installment.expense.payment_type,
+                installment_number=installment.installment_number,
+                installment_count=installment.expense.installment_count,
+                first_installment_date=installment.expense.first_installment_date,
+                amount_due=installment.amount,
+                total_amount=installment.expense.amount,
+                category_id=installment.expense.category_id,
+                payment_method_id=installment.expense.payment_method_id,
+            )
+            for installment in installments
+        ],
         page=page,
         page_size=page_size,
         total=total,
