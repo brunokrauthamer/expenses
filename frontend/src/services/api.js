@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL ?? '/api';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || '/api').replace(/\/+$/, '');
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -43,7 +43,7 @@ async function request(path, { signal, method = 'GET', body } = {}) {
   const contentType = response.headers.get('content-type') ?? '';
   if (response.ok && !contentType.includes('application/json')) {
     throw new ApiError(
-      'A rota da API retornou HTML em vez de JSON. Reinicie o Vite e confirme que o proxy /api aponta para o backend em http://127.0.0.1:8000.',
+      'A rota da API retornou HTML em vez de JSON. Verifique o endereço da API e a configuração do proxy.',
       response.status,
     );
   }
