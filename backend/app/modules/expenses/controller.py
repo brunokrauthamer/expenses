@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.modules.expenses.schema import (
     ExpenseCreate,
     ExpenseInstallmentResponse,
+    ExpenseMonthlyPaymentResponse,
     ExpensePage,
     ExpenseResponse,
     ExpenseSummaryResponse,
@@ -15,6 +16,7 @@ from app.modules.expenses.service import (
     create_expense,
     delete_expense,
     get_expense_summary,
+    list_expenses_paid_in_month,
     list_expenses,
     list_recent_expenses,
     update_expense,
@@ -81,6 +83,30 @@ def get_recent_expenses(
     database: Session = Depends(get_db),
 ) -> list[ExpenseResponse]:
     return list_recent_expenses(database, limit)
+
+
+@router.get("/month", response_model=list[ExpenseMonthlyPaymentResponse])
+def get_expenses_paid_in_month(
+    month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    database: Session = Depends(get_db),
+) -> list[ExpenseMonthlyPaymentResponse]:
+    return [
+        ExpenseMonthlyPaymentResponse(
+            id=expense.id,
+            description=expense.description,
+            amount=expense.amount,
+            expense_date=expense.expense_date,
+            payment_type=expense.payment_type,
+            installment_count=expense.installment_count,
+            first_installment_date=expense.first_installment_date,
+            category_id=expense.category_id,
+            payment_method_id=expense.payment_method_id,
+            created_at=expense.created_at,
+            installment_number=installment.installment_number,
+            installment_amount=installment.amount,
+        )
+        for expense, installment in list_expenses_paid_in_month(database, month)
+    ]
 
 
 @router.get("/summary", response_model=ExpenseSummaryResponse)

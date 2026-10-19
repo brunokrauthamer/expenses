@@ -67,7 +67,7 @@ async function request(path, { signal, method = 'GET', body } = {}) {
 export const api = {
   getCategories: (signal) => request('/categories', { signal }),
   getPaymentMethods: (signal) => request('/payment-methods', { signal }),
-  getRecentExpenses: (limit, signal) => request(`/expenses/recent?limit=${limit}`, { signal }),
+  getRecentExpenses: (month, signal) => request(`/expenses/month?month=${month}`, { signal }),
   getSummary: (filters, signal) => {
     const params = new URLSearchParams();
     params.set('start_month', filters.startMonth);

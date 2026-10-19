@@ -6,10 +6,11 @@ import SectionHeading from '../components/ui/SectionHeading.jsx';
 import Icon from '../components/ui/Icon.jsx';
 import { categoryColor } from '../components/charts/CategoryChart.jsx';
 import { formatAmountInput, formatDate, formatMoney, todayISO } from '../shared/format.js';
-import { getQueryErrorMessage, invalidateCachedQueries, updateCachedQuery, useApiQuery } from '../shared/queryCache.js';
+import { getQueryErrorMessage, invalidateCachedQueries, useApiQuery } from '../shared/queryCache.js';
 import { useExpenseLookups } from '../shared/useExpenseLookups.js';
 
-const RECENT_QUERY_KEY = ['expenses', 'recent', { limit: 11 }];
+const CURRENT_MONTH = new Date().toLocaleDateString('sv-SE').slice(0, 7);
+const RECENT_QUERY_KEY = ['expenses', 'recent', { month: CURRENT_MONTH }];
 
 function newForm() {
   return {
@@ -48,6 +49,14 @@ function toAmountString(input) {
   const normalizedInteger = integer.replace(/^0+(?=\d)/, '');
   if (normalizedInteger === '0' && cents === '00') return null;
   return `${normalizedInteger}.${cents}`;
+}
+
+function sumInstallmentAmounts(expenses = []) {
+  const cents = expenses.reduce((total, expense) => {
+    const [whole, fraction = ''] = String(expense.installment_amount ?? '0').split('.');
+    return total + BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0').slice(0, 2) || '0');
+  }, 0n);
+  return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
 }
 
 const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethods, expenseToEdit, onCancelEdit }) {
@@ -129,9 +138,7 @@ const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethods, expe
       const saved = expenseToEdit
         ? await api.updateExpense(expenseToEdit.id, payload)
         : await api.createExpense(payload);
-      updateCachedQuery(RECENT_QUERY_KEY, (recent = []) => expenseToEdit
-        ? recent.map((expense) => expense.id === saved.id ? saved : expense)
-        : [saved, ...recent.filter((expense) => expense.id !== saved.id)].slice(0, 11));
+      invalidateCachedQueries(['expenses', 'recent']);
       invalidateCachedQueries(['expenses', 'summary']);
       setForm(expenseToEdit ? formFromExpense(saved) : newForm());
       setSuccess(expenseToEdit ? 'Despesa atualizada com sucesso.' : 'Despesa salva com sucesso.');
@@ -284,8 +291,11 @@ function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, r
     <>
       <div className="section-heading list-heading">
         <span className="step-number">02</span>
-        <div><h2>Despesas recentes</h2><p>Uma linha por compra cadastrada.</p></div>
-        <span className="count-badge" aria-label={`${Math.min(expenses?.length ?? 0, 10)} compras visíveis`}>{Math.min(expenses?.length ?? 0, 10)}</span>
+        <div><h2>Pagamentos deste mês</h2><p>Compras com cobrança vencendo neste mês.</p></div>
+        <strong className="monthly-payment-total" aria-label={`Total de pagamentos do mês: ${formatMoney(sumInstallmentAmounts(expenses))}`}>
+          {formatMoney(sumInstallmentAmounts(expenses))}
+        </strong>
+        <span className="count-badge" aria-label={`${expenses?.length ?? 0} compras visíveis`}>{expenses?.length ?? 0}</span>
       </div>
       {message && <p className="form-message" role="status">{message}</p>}
       {error && !expenses && (
@@ -300,13 +310,13 @@ function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, r
           <button className="text-button" type="button" onClick={refetch}>Tentar novamente</button>
         </div>
       )}
-      {isLoading && !expenses ? <div className="query-state" role="status">Buscando as compras recentes…</div> : null}
+      {isLoading && !expenses ? <div className="query-state" role="status">Buscando os pagamentos deste mês…</div> : null}
       {!isLoading && expenses?.length === 0 && (
         <EmptyState title="Tudo começa com um registro." description={<>Adicione sua primeira despesa<br />e ela aparece aqui.</>} />
       )}
       {expenses?.length > 0 && (
         <ul className={`expense-list${isLoading ? ' list-updating' : ''}`}>
-          {expenses.slice(0, 10).map((expense) => {
+          {expenses.map((expense) => {
             const category = categories.find((item) => item.id === expense.category_id)?.name ?? 'Categoria';
             const method = paymentMethods.find((item) => item.id === expense.payment_method_id)?.name ?? 'Pagamento';
             return (
@@ -316,10 +326,10 @@ function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, r
                   <strong title={expense.description}>{expense.description}</strong>
                   <span title={`${category} · ${method}`}>
                     {category}<i>·</i>{method}<i>·</i>{formatDate(expense.expense_date)}
-                    {expense.installment_count > 1 && <i>{expense.installment_count} parcelas</i>}
+                    {expense.installment_count > 1 && <i>Parcela {expense.installment_number} de {expense.installment_count}</i>}
                   </span>
                 </div>
-                <strong className="expense-amount">{formatMoney(expense.total_amount)}</strong>
+                <strong className="expense-amount">{formatMoney(expense.installment_amount)}</strong>
                 <div className="expense-actions">
                   <button className="icon-button" type="button" onClick={() => onEdit(expense)} aria-label={`Editar ${expense.description}`} title="Editar compra"><Icon name="edit" size={16} /></button>
                   <button className="icon-button delete-button" type="button" onClick={() => openDeleteDialog(expense)} disabled={deletingId !== null} aria-label={`Excluir ${expense.description}`} title="Excluir compra">
@@ -366,7 +376,7 @@ function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, r
 
 export default function ExpensesPage() {
   const [editingExpense, setEditingExpense] = useState(null);
-  const fetchRecentExpenses = useCallback(({ signal }) => api.getRecentExpenses(11, signal), []);
+  const fetchRecentExpenses = useCallback(({ signal }) => api.getRecentExpenses(CURRENT_MONTH, signal), []);
   const { categoriesQuery, paymentMethodsQuery, categories, paymentMethods } = useExpenseLookups();
   const recentQuery = useApiQuery(RECENT_QUERY_KEY, fetchRecentExpenses);
   const lookupsAreReady = categories.length > 0 && paymentMethods.length > 0;

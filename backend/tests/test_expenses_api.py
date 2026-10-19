@@ -82,6 +82,41 @@ def test_list_expenses_paginates_and_filters_by_month_and_search(
         assert response.json()["items"][0]["id"] == matching_expense.id
 
 
+def test_recent_month_lists_every_purchase_paid_in_month_ordered_by_expense_date(
+    client: TestClient, database: Session
+) -> None:
+    category, payment_method = create_references(database)
+    earlier_purchase = create_expense(
+        database, category.id, payment_method.id, "Compra anterior", date(2026, 10, 3)
+    )
+    later_purchase = create_expense(
+        database, category.id, payment_method.id, "Compra posterior", date(2026, 10, 8)
+    )
+    outside_month = create_expense(
+        database, category.id, payment_method.id, "Compra futura", date(2026, 11, 1)
+    )
+    # The payment dates deliberately disagree with the purchase date order.
+    database.query(ExpenseInstallment).filter_by(expense_id=earlier_purchase.id).update(
+        {"due_date": date(2026, 10, 31)}
+    )
+    database.query(ExpenseInstallment).filter_by(expense_id=later_purchase.id).update(
+        {"due_date": date(2026, 10, 2), "amount": Decimal("25.00"), "installment_number": 2}
+    )
+    later_purchase.amount = Decimal("75.00")
+    later_purchase.installment_count = 3
+    database.commit()
+
+    response = client.get("/expenses/month", params={"month": "2026-10"})
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == [later_purchase.id, earlier_purchase.id]
+    assert outside_month.id not in [item["id"] for item in response.json()]
+    payment = response.json()[0]
+    assert payment["installment_number"] == 2
+    assert payment["installment_count"] == 3
+    assert payment["installment_amount"] == "25.00"
+
+
 def test_create_expense(client: TestClient, database: Session) -> None:
     category, payment_method = create_references(database)
 

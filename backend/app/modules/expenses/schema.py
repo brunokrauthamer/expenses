@@ -79,6 +79,11 @@ class ExpenseResponse(BaseModel):
     created_at: datetime
 
 
+class ExpenseMonthlyPaymentResponse(ExpenseResponse):
+    installment_number: int
+    installment_amount: Decimal
+
+
 class ExpenseInstallmentResponse(BaseModel):
     id: int
     installment_id: int

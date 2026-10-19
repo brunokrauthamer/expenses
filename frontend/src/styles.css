@@ -188,6 +188,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 
 .list-heading { align-items: flex-start; margin-bottom: 12px; }
 .count-badge { display: grid; min-width: 25px; height: 24px; flex: 0 0 auto; place-items: center; margin-left: auto; padding: 0 7px; border-radius: 7px; background: #f1f1f8; color: #747b91; font-size: 10px; font-weight: 600; }
+.monthly-payment-total { flex: 0 0 auto; color: #2f695b; font-size: 14px; font-variant-numeric: tabular-nums; }
 .expense-list { margin: 0; padding: 0; list-style: none; transition: opacity .22s ease, transform .22s ease; }
 .expense-list.list-updating { opacity: .6; }
 .expense-item { display: flex; min-height: 61px; align-items: center; gap: 9px; border-top: 1px solid #f0f0f5; animation: item-enter .24s ease both; }

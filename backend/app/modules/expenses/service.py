@@ -63,6 +63,26 @@ def list_recent_expenses(database: Session, limit: int) -> list[Expense]:
     return list(database.scalars(statement))
 
 
+def list_expenses_paid_in_month(
+    database: Session, month: str
+) -> list[tuple[Expense, ExpenseInstallment]]:
+    """Retorna cada cobranÃ§a do mÃªs com os dados da compra correspondente."""
+    first_day = date.fromisoformat(f"{month}-01")
+    year, month_number = map(int, month.split("-"))
+    last_day = date(year, month_number, monthrange(year, month_number)[1])
+    statement = (
+        select(Expense, ExpenseInstallment)
+        .join(ExpenseInstallment, ExpenseInstallment.expense_id == Expense.id)
+        .where(ExpenseInstallment.due_date.between(first_day, last_day))
+        .order_by(
+            Expense.expense_date.desc(),
+            Expense.id.desc(),
+            ExpenseInstallment.installment_number.asc(),
+        )
+    )
+    return list(database.execute(statement))
+
+
 def get_expense_summary(
     database: Session,
     start_month: str,
