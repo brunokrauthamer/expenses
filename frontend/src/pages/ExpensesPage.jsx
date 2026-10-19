@@ -3,6 +3,7 @@ import { api } from '../services/api.js';
 import EmptyState from '../components/ui/EmptyState.jsx';
 import Panel from '../components/ui/Panel.jsx';
 import SectionHeading from '../components/ui/SectionHeading.jsx';
+import SectionSwitcher from '../components/ui/SectionSwitcher.jsx';
 import Icon from '../components/ui/Icon.jsx';
 import { categoryColor } from '../components/charts/CategoryChart.jsx';
 import { formatAmountInput, formatDate, formatMoney, todayISO } from '../shared/format.js';
@@ -65,6 +66,11 @@ const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethods, expe
   const [errorField, setErrorField] = useState('');
   const [success, setSuccess] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const descriptionRef = useRef(null);
+
+  useEffect(() => {
+    if (expenseToEdit) descriptionRef.current?.focus({ preventScroll: true });
+  }, [expenseToEdit]);
 
   const updateField = (event) => {
     const { name, value } = event.target;
@@ -157,82 +163,83 @@ const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethods, expe
         description={expenseToEdit ? 'Atualize os dados desta compra.' : 'Registre uma compra do seu dia.'}
         trailing={expenseToEdit && <button className="text-button cancel-edit" type="button" onClick={onCancelEdit}>Cancelar</button>}
       />
-      <label className="field full-field">
-        <span>Descrição</span>
-        <input name="description" value={form.description} onChange={updateField} placeholder="Ex.: compras da semana" maxLength="120" autoComplete="off" aria-invalid={errorField === "description"} aria-describedby={errorField === "description" ? "description-error" : undefined} required />
+      <div className="form-fields scroll-region" role="region" aria-label="Dados da despesa" tabIndex="0">
+        <label className="field full-field">
+          <span>Descrição</span>
+          <input ref={descriptionRef} name="description" value={form.description} onChange={updateField} placeholder="Ex.: compras da semana" maxLength="120" autoComplete="off" aria-invalid={errorField === "description"} aria-describedby={errorField === "description" ? "description-error" : undefined} required />
           {errorField === "description" && <span className="field-error" id="description-error" role="alert">{error}</span>}
-      </label>
-
-      <div className="field-row">
-        <label className="field">
-          <span>{form.paymentType === 'installments' && form.amountType === 'installment' ? 'Valor da parcela' : 'Valor'}</span>
-          <div className="input-with-prefix">
-            <span>R$</span>
-            <input name="amount" type="text" inputMode="numeric" autoComplete="off" value={form.amount} onChange={updateField} placeholder="0,00" aria-label="Valor em reais" aria-invalid={errorField === "amount"} aria-describedby={errorField === "amount" ? "amount-error" : undefined} required />
-          </div>
-          {errorField === "amount" && <span className="field-error" id="amount-error" role="alert">{error}</span>}
         </label>
-        <label className="field">
-          <span>Data da compra</span>
-          <input name="expenseDate" type="date" value={form.expenseDate} onChange={updateField} aria-invalid={errorField === "expenseDate"} aria-describedby={errorField === "expenseDate" ? "expense-date-error" : undefined} required />
-          {errorField === "expenseDate" && <span className="field-error" id="expense-date-error" role="alert">{error}</span>}
-        </label>
-      </div>
 
-      <label className="field full-field">
-        <span>Categoria</span>
-        <select name="categoryId" value={form.categoryId} onChange={updateField} aria-invalid={errorField === "categoryId"} aria-describedby={errorField === "categoryId" ? "category-error" : undefined} required>
-          <option value="" disabled>Escolha uma categoria</option>
-          {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-        </select>
-        {errorField === "categoryId" && <span className="field-error" id="category-error" role="alert">{error}</span>}
-      </label>
-
-      <label className="field full-field">
-        <span>Meio de pagamento</span>
-        <select name="paymentMethodId" value={form.paymentMethodId} onChange={updateField} aria-invalid={errorField === "paymentMethodId"} aria-describedby={errorField === "paymentMethodId" ? "payment-method-error" : undefined} required>
-          <option value="" disabled>Escolha um meio de pagamento</option>
-          {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
-        </select>
-        {errorField === "paymentMethodId" && <span className="field-error" id="payment-method-error" role="alert">{error}</span>}
-      </label>
-
-      <fieldset className="payment-choice">
-        <legend>Pagamento</legend>
-        <label className={`choice-option${form.paymentType === 'one_time' ? ' is-selected' : ''}`}>
-          <input type="radio" name="paymentType" value="one_time" checked={form.paymentType === 'one_time'} onChange={updateField} />
-          <span>À vista</span>
-        </label>
-        <label className={`choice-option${form.paymentType === 'installments' ? ' is-selected' : ''}`}>
-          <input type="radio" name="paymentType" value="installments" checked={form.paymentType === 'installments'} onChange={updateField} />
-          <span>Parcelado</span>
-        </label>
-      </fieldset>
-
-      {form.paymentType === 'installments' && (
-        <div className="installment-fields">
-          <div className="field-row">
-            <label className="field">
-              <span>Quantidade</span>
-              <input name="installmentCount" type="number" inputMode="numeric" min="2" max="1200" step="1" value={form.installmentCount} onChange={updateField} aria-invalid={errorField === "installmentCount"} aria-describedby={errorField === "installmentCount" ? "installment-count-error" : undefined} required />
-              {errorField === "installmentCount" && <span className="field-error" id="installment-count-error" role="alert">{error}</span>}
-            </label>
-            <label className="field">
-              <span>O valor informado é</span>
-              <select name="amountType" value={form.amountType} onChange={updateField}>
-                <option value="total">Total da compra</option>
-                <option value="installment">Cada parcela</option>
-              </select>
-            </label>
-          </div>
-          <label className="field full-field">
-            <span>Data da primeira parcela</span>
-            <input name="firstInstallmentDate" type="date" min={form.expenseDate} value={form.firstInstallmentDate} onChange={updateField} aria-invalid={errorField === "firstInstallmentDate"} aria-describedby={errorField === "firstInstallmentDate" ? "first-installment-error" : undefined} required />
-            {errorField === "firstInstallmentDate" && <span className="field-error" id="first-installment-error" role="alert">{error}</span>}
+        <div className="field-row">
+          <label className="field">
+            <span>{form.paymentType === 'installments' && form.amountType === 'installment' ? 'Valor da parcela' : 'Valor'}</span>
+            <div className="input-with-prefix">
+              <span>R$</span>
+              <input name="amount" type="text" inputMode="numeric" autoComplete="off" value={form.amount} onChange={updateField} placeholder="0,00" aria-label="Valor em reais" aria-invalid={errorField === "amount"} aria-describedby={errorField === "amount" ? "amount-error" : undefined} required />
+            </div>
+            {errorField === "amount" && <span className="field-error" id="amount-error" role="alert">{error}</span>}
+          </label>
+          <label className="field">
+            <span>Data da compra</span>
+            <input name="expenseDate" type="date" value={form.expenseDate} onChange={updateField} aria-invalid={errorField === "expenseDate"} aria-describedby={errorField === "expenseDate" ? "expense-date-error" : undefined} required />
+            {errorField === "expenseDate" && <span className="field-error" id="expense-date-error" role="alert">{error}</span>}
           </label>
         </div>
-      )}
 
+        <label className="field">
+          <span>Categoria</span>
+          <select name="categoryId" value={form.categoryId} onChange={updateField} aria-invalid={errorField === "categoryId"} aria-describedby={errorField === "categoryId" ? "category-error" : undefined} required>
+            <option value="" disabled>Selecione</option>
+            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+          </select>
+          {errorField === "categoryId" && <span className="field-error" id="category-error" role="alert">{error}</span>}
+        </label>
+
+        <label className="field">
+          <span>Meio de pagamento</span>
+          <select name="paymentMethodId" value={form.paymentMethodId} onChange={updateField} aria-invalid={errorField === "paymentMethodId"} aria-describedby={errorField === "paymentMethodId" ? "payment-method-error" : undefined} required>
+            <option value="" disabled>Selecione</option>
+            {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
+          </select>
+          {errorField === "paymentMethodId" && <span className="field-error" id="payment-method-error" role="alert">{error}</span>}
+        </label>
+
+        <fieldset className="payment-choice">
+          <legend>Pagamento</legend>
+          <label className={`choice-option${form.paymentType === 'one_time' ? ' is-selected' : ''}`}>
+            <input type="radio" name="paymentType" value="one_time" checked={form.paymentType === 'one_time'} onChange={updateField} />
+            <span>À vista</span>
+          </label>
+          <label className={`choice-option${form.paymentType === 'installments' ? ' is-selected' : ''}`}>
+            <input type="radio" name="paymentType" value="installments" checked={form.paymentType === 'installments'} onChange={updateField} />
+            <span>Parcelado</span>
+          </label>
+        </fieldset>
+
+        {form.paymentType === 'installments' && (
+          <div className="installment-fields">
+            <div className="field-row">
+              <label className="field">
+                <span>Quantidade</span>
+                <input name="installmentCount" type="number" inputMode="numeric" min="2" max="1200" step="1" value={form.installmentCount} onChange={updateField} aria-invalid={errorField === "installmentCount"} aria-describedby={errorField === "installmentCount" ? "installment-count-error" : undefined} required />
+                {errorField === "installmentCount" && <span className="field-error" id="installment-count-error" role="alert">{error}</span>}
+              </label>
+              <label className="field">
+                <span>O valor informado é</span>
+                <select name="amountType" value={form.amountType} onChange={updateField}>
+                  <option value="total">Total da compra</option>
+                  <option value="installment">Cada parcela</option>
+                </select>
+              </label>
+            </div>
+            <label className="field full-field">
+              <span>Data da primeira parcela</span>
+              <input name="firstInstallmentDate" type="date" min={form.expenseDate} value={form.firstInstallmentDate} onChange={updateField} aria-invalid={errorField === "firstInstallmentDate"} aria-describedby={errorField === "firstInstallmentDate" ? "first-installment-error" : undefined} required />
+              {errorField === "firstInstallmentDate" && <span className="field-error" id="first-installment-error" role="alert">{error}</span>}
+            </label>
+          </div>
+        )}
+      </div>
       {error && !errorField && <p className="form-message error-message" role="alert">{error}</p>}
       {success && <p className="form-message success-message" role="status">{success}</p>}
       <button className="submit-button" type="submit" disabled={isSaving}>
@@ -291,7 +298,7 @@ function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, r
     <>
       <div className="section-heading list-heading">
         <span className="step-number">02</span>
-        <div><h2>Pagamentos deste mês</h2><p>Compras com cobrança vencendo neste mês.</p></div>
+        <div className="list-heading-copy"><h2 id="monthly-payments-heading">Pagamentos do mês</h2><p>Cobranças com vencimento neste mês.</p></div>
         <strong className="monthly-payment-total" aria-label={`Total de pagamentos do mês: ${formatMoney(sumInstallmentAmounts(expenses))}`}>
           {formatMoney(sumInstallmentAmounts(expenses))}
         </strong>
@@ -315,7 +322,7 @@ function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, r
         <EmptyState title="Tudo começa com um registro." description={<>Adicione sua primeira despesa<br />e ela aparece aqui.</>} />
       )}
       {expenses?.length > 0 && (
-        <ul className={`expense-list${isLoading ? ' list-updating' : ''}`}>
+        <ul className={`expense-list scroll-region${isLoading ? ' list-updating' : ''}`} tabIndex="0" aria-labelledby="monthly-payments-heading">
           {expenses.map((expense) => {
             const category = categories.find((item) => item.id === expense.category_id)?.name ?? 'Categoria';
             const method = paymentMethods.find((item) => item.id === expense.payment_method_id)?.name ?? 'Pagamento';
@@ -376,6 +383,7 @@ function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, r
 
 export default function ExpensesPage() {
   const [editingExpense, setEditingExpense] = useState(null);
+  const [activeSection, setActiveSection] = useState('form');
   const fetchRecentExpenses = useCallback(({ signal }) => api.getRecentExpenses(CURRENT_MONTH, signal), []);
   const { categoriesQuery, paymentMethodsQuery, categories, paymentMethods } = useExpenseLookups();
   const recentQuery = useApiQuery(RECENT_QUERY_KEY, fetchRecentExpenses);
@@ -383,17 +391,21 @@ export default function ExpensesPage() {
   const lookupsAreLoading = categoriesQuery.isLoading || paymentMethodsQuery.isLoading;
   const startEditing = useCallback((expense) => {
     setEditingExpense(expense);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setActiveSection('form');
   }, []);
 
   return (
     <>
       <section className="intro" id="inicio">
         <p className="eyebrow">CONTROLE PESSOAL</p>
-        <h1>Suas despesas,<br /><span>no seu ritmo.</span></h1>
+        <h1>Suas despesas, <span>no seu ritmo.</span></h1>
         <p className="intro-copy">Um lugar simples para acompanhar o que você gasta.</p>
       </section>
-      <div className="content-grid">
+      <SectionSwitcher label="Seções de despesas" value={activeSection} onChange={setActiveSection} options={[
+        { value: 'form', label: editingExpense ? 'Editar despesa' : 'Nova despesa', controls: 'expense-form-panel' },
+        { value: 'payments', label: `Pagamentos do mês (${recentQuery.data?.length ?? 0})`, controls: 'monthly-payments-panel' },
+      ]} />
+      <div className="content-grid" data-active-section={activeSection}>
         <Panel className={`form-panel${editingExpense ? ' is-editing' : ''}`} id="expense-form-panel">
           {!lookupsAreReady && (categoriesQuery.error || paymentMethodsQuery.error) && (
             <div className="query-state error-state" role="alert">
@@ -411,10 +423,9 @@ export default function ExpensesPage() {
             <p className="form-message error-message" role="alert">Cadastre um meio de pagamento antes de continuar.</p>
           )}
           {lookupsAreReady && <ExpenseForm key={editingExpense?.id ?? 'new'} categories={categories} paymentMethods={paymentMethods} expenseToEdit={editingExpense} onCancelEdit={() => setEditingExpense(null)} />}
-          <p className="form-footnote"><span aria-hidden="true">✳</span> Sua despesa fica salva com segurança no banco.</p>
         </Panel>
 
-        <Panel className="list-panel">
+        <Panel className="list-panel" id="monthly-payments-panel">
           <ExpenseList
             expenses={recentQuery.data}
             categories={categories}
