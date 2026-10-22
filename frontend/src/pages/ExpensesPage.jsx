@@ -66,6 +66,7 @@ const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethods, expe
   const [errorField, setErrorField] = useState('');
   const [success, setSuccess] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [keepFields, setKeepFields] = useState(false);
   const descriptionRef = useRef(null);
 
   useEffect(() => {
@@ -146,7 +147,20 @@ const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethods, expe
         : await api.createExpense(payload);
       invalidateCachedQueries(['expenses', 'recent']);
       invalidateCachedQueries(['expenses', 'summary']);
-      setForm(expenseToEdit ? formFromExpense(saved) : newForm());
+      if (expenseToEdit) {
+        setForm(formFromExpense(saved));
+      } else {
+        setForm(() => {
+          const next = newForm();
+          if (keepFields) {
+            next.description = form.description;
+            next.categoryId = form.categoryId;
+            next.paymentMethodId = form.paymentMethodId;
+            next.paymentType = form.paymentType;
+          }
+          return next;
+        });
+      }
       setSuccess(expenseToEdit ? 'Despesa atualizada com sucesso.' : 'Despesa salva com sucesso.');
     } catch (requestError) {
       setError(requestError.message || 'Não foi possível salvar esta despesa.');
@@ -240,6 +254,12 @@ const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethods, expe
           </div>
         )}
       </div>
+      {!expenseToEdit && (
+        <label className="keep-fields-option">
+          <input type="checkbox" checked={keepFields} onChange={(event) => setKeepFields(event.target.checked)} />
+          <span>Manter descrição, categoria, meio de pagamento e pagamento para a próxima despesa</span>
+        </label>
+      )}
       {error && !errorField && <p className="form-message error-message" role="alert">{error}</p>}
       {success && <p className="form-message success-message" role="status">{success}</p>}
       <button className="submit-button" type="submit" disabled={isSaving}>

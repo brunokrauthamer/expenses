@@ -157,6 +157,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .section-heading p { margin: 4px 0 0; color: #9298aa; font-size: 11px; line-height: 1.5; }
 
 .expense-form { display: grid; gap: 13px; }
+.keep-fields-option { display: flex; align-items: flex-start; gap: 8px; color: #596078; font-size: 11px; line-height: 1.45; cursor: pointer; }
+.keep-fields-option input { flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--accent); }
 .field { display: grid; min-width: 0; gap: 6px; color: #596078; font-size: 11px; font-weight: 600; }
 .field input, .field select { width: 100%; min-width: 0; height: 41px; padding: 0 11px; border: 1px solid #e2e4ee; border-radius: 9px; background: #fff; color: #28304a; font-size: 12px; transition: border-color .18s ease, box-shadow .18s ease; }
 .field input::placeholder { color: #abb0c0; }
