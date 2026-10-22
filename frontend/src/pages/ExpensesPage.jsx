@@ -5,6 +5,7 @@ import Panel from '../components/ui/Panel.jsx';
 import SectionHeading from '../components/ui/SectionHeading.jsx';
 import SectionSwitcher from '../components/ui/SectionSwitcher.jsx';
 import Icon from '../components/ui/Icon.jsx';
+import CategoryIcon from '../components/ui/CategoryIcon.jsx';
 import { categoryColor } from '../components/charts/CategoryChart.jsx';
 import { formatAmountInput, formatDate, formatMoney, todayISO } from '../shared/format.js';
 import { getQueryErrorMessage, invalidateCachedQueries, useApiQuery } from '../shared/queryCache.js';
@@ -394,7 +395,7 @@ function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, r
             const method = paymentMethods.find((item) => item.id === expense.payment_method_id)?.name ?? 'Pagamento';
             return (
               <li className="expense-item" key={expense.id}>
-                <span className="expense-symbol" style={{ '--category-color': categoryColor(expense.category_id) }} aria-hidden="true">{category.slice(0, 1).toLocaleUpperCase('pt-BR')}</span>
+                <span className="expense-symbol" style={{ '--category-color': categoryColor(expense.category_id) }} aria-hidden="true"><CategoryIcon name={category} size={18} /></span>
                 <div className="expense-details">
                   <strong title={expense.description}>{expense.description}</strong>
                   <span title={`${category} · ${method}`}>
@@ -510,13 +511,18 @@ export default function ExpensesPage() {
         </Panel>
 
         <Panel className="list-panel" id="monthly-payments-panel">
+          <section className="monthly-income-section" aria-label="Entradas do mês">
           <div className="section-heading list-heading"><div className="list-heading-copy"><h2>Entradas deste mês</h2><p>Valores recebidos no mês selecionado.</p></div></div>
           {incomeQuery.error && <p className="form-message error-message" role="alert">Não foi possível carregar as entradas.</p>}
           {incomeQuery.data?.items?.length ? <ul className="expense-list scroll-region" aria-label="Entradas recebidas neste mês">{incomeQuery.data.items.map((entry) => {
-            const type = incomeCategories.find((category) => category.id === entry.income_category_id)?.name ?? 'Entrada';
+            const incomeCategory = incomeCategories.find((category) => category.id === entry.income_category_id);
+            const type = incomeCategory?.name ?? 'Entrada';
             const expenseCategory = categories.find((category) => category.id === entry.expense_category_id)?.name;
-            return <li className="expense-item" key={entry.id}><span className="expense-symbol" aria-hidden="true">{type.slice(0, 1)}</span><div className="expense-details"><strong>{entry.description}</strong><span>{type}{expenseCategory ? ` · ${expenseCategory}` : ''} · {formatDate(entry.received_date)}</span></div><strong className="expense-amount">{formatMoney(entry.amount)}</strong><div className="expense-actions"><button className="icon-button" type="button" onClick={() => { setEditingEntry(entry); setEntryMode(true); setActiveSection('form'); }} aria-label={`Editar ${entry.description}`} title="Editar entrada"><Icon name="edit" size={16} /></button><button className="icon-button delete-button" type="button" onClick={() => deleteIncomeEntry(entry)} aria-label={`Excluir ${entry.description}`} title="Excluir entrada"><Icon name="trash" size={16} /></button></div></li>;
+            const isSalary = type.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR') === 'salario';
+            return <li className="expense-item" key={entry.id}><span className="expense-symbol" style={expenseCategory ? { '--category-color': categoryColor(entry.expense_category_id) } : undefined} aria-hidden="true">{incomeCategory?.requires_expense_category && expenseCategory ? <CategoryIcon name={expenseCategory} size={18} /> : <Icon name={isSalary ? 'salary' : 'wallet'} size={18} />}</span><div className="expense-details"><strong>{entry.description}</strong><span>{type}{expenseCategory ? ` · ${expenseCategory}` : ''} · {formatDate(entry.received_date)}</span></div><strong className="expense-amount">{formatMoney(entry.amount)}</strong><div className="expense-actions"><button className="icon-button" type="button" onClick={() => { setEditingEntry(entry); setEntryMode(true); setActiveSection('form'); }} aria-label={`Editar ${entry.description}`} title="Editar entrada"><Icon name="edit" size={16} /></button><button className="icon-button delete-button" type="button" onClick={() => deleteIncomeEntry(entry)} aria-label={`Excluir ${entry.description}`} title="Excluir entrada"><Icon name="trash" size={16} /></button></div></li>;
           })}</ul> : <EmptyState title="Nenhuma entrada neste mês." description="Salário e reembolsos aparecerão aqui após o cadastro." />}
+          </section>
+          <section className="monthly-payments-section" aria-label="Pagamentos do mês">
           <ExpenseList
             expenses={recentQuery.data}
             categories={categories}
@@ -526,6 +532,7 @@ export default function ExpensesPage() {
             refetch={recentQuery.refetch}
             onEdit={startEditing}
           />
+          </section>
         </Panel>
       </div>
     </>

@@ -44,11 +44,14 @@ body { min-height: 0; }
 .list-heading-copy p { margin-top: 3px; }
 .monthly-payment-total { grid-column: 2; color: var(--accent-dark); font-size: 20px; letter-spacing: -.5px; }
 .list-heading .count-badge { grid-column: 3; grid-row: 1 / 3; align-self: center; }
-.list-panel > .form-message, .list-panel > .query-state { flex: 0 0 auto; margin-bottom: 12px; }
+.monthly-income-section, .monthly-payments-section { display: flex; min-height: 0; flex-direction: column; overflow: hidden; }
+.monthly-income-section { flex: 3 1 0; }
+.monthly-payments-section { flex: 7 1 0; }
+.monthly-income-section > .form-message, .monthly-payments-section > .form-message, .monthly-payments-section > .query-state { flex: 0 0 auto; margin-bottom: 8px; }
 .expense-list { flex: 1; align-content: start; margin: 0 -5px; padding: 0 5px; }
 .expense-item { min-height: 72px; }
 .expense-details > span { flex-wrap: wrap; row-gap: 3px; white-space: normal; }
-.list-panel > .empty-state { flex: 1; min-height: 0; }
+.monthly-income-section > .empty-state, .monthly-payments-section > .empty-state { flex: 1; min-height: 0; }
 
 .filter-panel { position: static; }
 .filter-panel .section-heading { margin-bottom: 16px; }
