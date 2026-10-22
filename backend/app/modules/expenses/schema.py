@@ -108,6 +108,33 @@ class ExpensePage(BaseModel):
     total_pages: int
 
 
+class ExpenseHistoryItem(BaseModel):
+    kind: Literal["expense", "reimbursement"]
+    id: int
+    installment_id: int | None = None
+    description: str
+    event_date: date
+    amount: Decimal
+    category_id: int
+    payment_method_id: int | None = None
+    payment_type: str | None = None
+    installment_number: int | None = None
+    installment_count: int | None = None
+    first_installment_date: date | None = None
+    total_amount: Decimal | None = None
+
+
+class ExpenseHistoryPage(BaseModel):
+    items: list[ExpenseHistoryItem]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+    gross_expense_amount: Decimal
+    reimbursement_amount: Decimal
+    net_expense_amount: Decimal
+
+
 class ExpenseMonthTotal(BaseModel):
     month: str
     amount_due: Decimal

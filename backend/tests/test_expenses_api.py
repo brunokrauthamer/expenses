@@ -8,6 +8,7 @@ from app.modules.categories.model import Category
 from app.modules.expenses.model import Expense
 from app.modules.expenses.model import ExpenseInstallment
 from app.modules.payment_methods.model import PaymentMethod
+from app.modules.income_entries.model import IncomeCategory, IncomeEntry
 
 
 def create_references(database: Session) -> tuple[Category, PaymentMethod]:
@@ -80,6 +81,72 @@ def test_list_expenses_paginates_and_filters_by_month_and_search(
         assert response.json()["total"] == 1
         assert response.json()["total_pages"] == 1
         assert response.json()["items"][0]["id"] == matching_expense.id
+
+
+def test_expense_history_combines_charges_and_reimbursements_with_global_pagination(
+    client: TestClient, database: Session
+) -> None:
+    category, payment_method = create_references(database)
+    older_expense = create_expense(
+        database, category.id, payment_method.id, "Compra", date(2026, 10, 3)
+    )
+    newer_expense = create_expense(
+        database, category.id, payment_method.id, "Outra compra", date(2026, 10, 25)
+    )
+    database.query(ExpenseInstallment).filter_by(expense_id=older_expense.id).update(
+        {"due_date": date(2026, 10, 8)}
+    )
+    database.query(ExpenseInstallment).filter_by(expense_id=newer_expense.id).update(
+        {"due_date": date(2026, 10, 20)}
+    )
+    reimbursement_category = IncomeCategory(name="Reembolso", requires_expense_category=True)
+    salary_category = IncomeCategory(name="Salário", requires_expense_category=False)
+    database.add_all([reimbursement_category, salary_category])
+    database.flush()
+    reimbursement = IncomeEntry(
+        description="Devolução", amount=Decimal("10.00"), received_date=date(2026, 10, 15),
+        income_category_id=reimbursement_category.id, expense_category_id=category.id,
+    )
+    database.add_all([
+        reimbursement,
+        IncomeEntry(
+            description="Salário", amount=Decimal("1000.00"), received_date=date(2026, 10, 28),
+            income_category_id=salary_category.id,
+        ),
+    ])
+    database.commit()
+
+    first_page = client.get(
+        "/expenses/history", params={"month": "2026-10", "page_size": 2}
+    )
+    second_page = client.get(
+        "/expenses/history", params={"month": "2026-10", "page_size": 2, "page": 2}
+    )
+
+    assert first_page.status_code == second_page.status_code == 200
+    assert first_page.json()["total"] == 3
+    assert first_page.json()["total_pages"] == 2
+    assert first_page.json()["gross_expense_amount"] == "51.00"
+    assert first_page.json()["reimbursement_amount"] == "10.00"
+    assert first_page.json()["net_expense_amount"] == "41.00"
+    assert [(item["kind"], item["event_date"]) for item in first_page.json()["items"]] == [
+        ("expense", "2026-10-20"),
+        ("reimbursement", "2026-10-15"),
+    ]
+    assert [(item["kind"], item["event_date"]) for item in second_page.json()["items"]] == [
+        ("expense", "2026-10-08"),
+    ]
+    payment_filtered = client.get(
+        "/expenses/history",
+        params={"month": "2026-10", "category_id": category.id, "payment_method_id": payment_method.id},
+    )
+    reimbursement_search = client.get(
+        "/expenses/history", params={"month": "2026-10", "search": "Devolução"}
+    )
+    assert payment_filtered.json()["total"] == 3
+    assert [(item["kind"], item["description"]) for item in reimbursement_search.json()["items"]] == [
+        ("reimbursement", "Devolução"),
+    ]
 
 
 def test_recent_month_lists_every_purchase_paid_in_month_ordered_by_expense_date(

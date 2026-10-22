@@ -32,6 +32,6 @@ Em produção, uma opção é manter `VITE_API_BASE_URL=/api` e configurar o ser
 
 Variáveis `VITE_` são incorporadas ao código entregue ao navegador e são públicas: nunca coloque senhas, tokens ou outras credenciais nelas. Valores em `.env` e `.env.*` são locais e ignorados pelo Git, com exceção dos arquivos `.env.example`. Alterações em `VITE_API_BASE_URL` exigem um novo build para afetar os arquivos publicados.
 
-As rotas da interface são `/despesas` e `/consolidado`. Filtros do consolidado ficam na URL e podem ser preservados ao recarregar a página. As referências e os resultados são mantidos em cache local por até 30 minutos e 2 minutos, respectivamente.
+As rotas da interface são `/despesas`, `/gastos` e `/consolidado`. A rota `/gastos` mostra cobranças e reembolsos numa lista única, ordenada por data do evento; os reembolsos aparecem negativos e em vermelho. O resumo traz valores brutos, reembolsos e líquido. É possível filtrar por categoria, meio de pagamento e busca; filtros e página ficam na URL. O filtro por meio de pagamento afeta apenas cobranças. Os filtros do consolidado também ficam na URL e podem ser preservados ao recarregar a página. As referências e os resultados são mantidos em cache local por até 30 minutos e 2 minutos, respectivamente.
 
-Para gerar uma versão de produção, execute `pnpm build`. Os arquivos gerados ficam em `dist/`. A hospedagem deve redirecionar rotas da aplicação, como `/despesas` e `/consolidado`, para `index.html`.
+Para gerar uma versão de produção, execute `pnpm build`. Os arquivos gerados ficam em `dist/`. A hospedagem deve redirecionar rotas da aplicação, como `/despesas`, `/gastos` e `/consolidado`, para `index.html`.

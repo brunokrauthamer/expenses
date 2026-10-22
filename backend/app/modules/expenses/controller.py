@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.modules.expenses.schema import (
     ExpenseCreate,
     ExpenseInstallmentResponse,
+    ExpenseHistoryItem,
+    ExpenseHistoryPage,
     ExpenseMonthlyPaymentResponse,
     ExpensePage,
     ExpenseResponse,
@@ -16,6 +18,7 @@ from app.modules.expenses.service import (
     create_expense,
     delete_expense,
     get_expense_summary,
+    list_expense_history,
     list_expenses_paid_in_month,
     list_expenses,
     list_recent_expenses,
@@ -77,6 +80,30 @@ def get_expenses(
     )
 
 
+@router.get("/history", response_model=ExpenseHistoryPage)
+def get_expense_history(
+    month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=100),
+    search: str | None = Query(default=None, max_length=100),
+    category_id: int | None = Query(default=None, ge=1),
+    payment_method_id: int | None = Query(default=None, ge=1),
+    database: Session = Depends(get_db),
+) -> ExpenseHistoryPage:
+    _validate_month_range(month, None, None)
+    items, total, gross_amount, reimbursement_amount, net_amount = list_expense_history(
+        database, page, page_size, month, search, category_id, payment_method_id
+    )
+    return ExpenseHistoryPage(
+        items=[ExpenseHistoryItem(**item) for item in items],
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=(total + page_size - 1) // page_size,
+        gross_expense_amount=gross_amount,
+        reimbursement_amount=reimbursement_amount,
+        net_expense_amount=net_amount,
+    )
 @router.get("/recent", response_model=list[ExpenseResponse])
 def get_recent_expenses(
     limit: int = Query(default=10, ge=1, le=50),

@@ -1,6 +1,6 @@
 # Contexto do projeto Expenses
 
-Atualizado em 19/10/2026. Este documento resume decisões e o estado observado. Em novos chats, confira o código, o Git e as migrações antes de assumir que nada mudou.
+Atualizado em 22/10/2026. Este documento resume decisões e o estado observado. Em novos chats, confira o código, o Git e as migrações antes de assumir que nada mudou.
 
 ## Objetivo e preferências
 
@@ -18,7 +18,7 @@ O projeto fica em `C:\Users\bruno\Documents\ChatGPT\expenses` e reúne frontend 
 expenses/
   frontend/               React, Vite e CSS
     src/main.jsx          Navegação, layout e entrada do React
-    src/pages/            Cadastro e gastos consolidados
+    src/pages/            Cadastro, histórico mensal e gastos consolidados
     src/components/       Painéis, estados, controles e gráficos SVG
     src/services/         Cliente HTTP compartilhado
     src/shared/           Cache, rotas, referências e formatação
@@ -38,9 +38,11 @@ O backend segue um monólito modular. Cada domínio tem arquivos `model.py`, `sc
 
 ## Estado funcional
 
-O frontend possui navegação por History API entre `/despesas` e `/consolidado`, com Header e Footer compartilhados e carregamento tardio das telas. O cadastro usa `POST /expenses`, consulta categorias e meios de pagamento no banco, permite compras à vista e parceladas e apresenta todos os pagamentos com vencimento no mês atual, uma linha por cobrança, ordenados pela data da compra. O valor exibido é o da parcela; compras parceladas indicam a parcela atual e o total de parcelas. O cabeçalho mostra a soma dos pagamentos do mês. Os registros persistem no banco após recarregar a página. Os filtros do consolidado ficam na URL.
+O frontend possui navegação por History API entre `/despesas`, `/gastos` e `/consolidado`, com Header e Footer compartilhados e carregamento tardio das telas. O cadastro usa `POST /expenses`, consulta categorias e meios de pagamento no banco, permite compras à vista e parceladas e apresenta todos os pagamentos com vencimento no mês atual, uma linha por cobrança, ordenados pela data da compra. O valor exibido é o da parcela; compras parceladas indicam a parcela atual e o total de parcelas. O cabeçalho mostra a soma dos pagamentos do mês. Os registros persistem no banco após recarregar a página. Os filtros do consolidado e do histórico mensal ficam na URL.
 
-As duas telas ocupam a altura da janela, sem rolagem do documento. O arquivo `frontend/src/viewport.css` concentra as regras desse layout, importadas após os estilos visuais. Cabeçalhos e rodapé são compactos. A lista de pagamentos tem rolagem própria, mantendo título e total visíveis. Os campos do formulário podem rolar quando necessário, com o botão de salvar sempre disponível. Filtros, gráficos, tabelas abertas e avisos têm áreas de rolagem delimitadas. No celular (até 700 px), o componente reutilizável `SectionSwitcher` alterna entre formulário e pagamentos e, no consolidado, entre evolução mensal, categorias e filtros; o rascunho do formulário é preservado ao alternar seções. A edição abre o formulário e foca a descrição, sem rolar a página inteira. O gráfico mensal adapta suas dimensões e a quantidade de rótulos à largura disponível.
+A tela `/gastos` apresenta cobranças e reembolsos do mês selecionado em uma única lista, usando o mês atual como padrão. A lista combinada é paginada em lotes de até 100 itens e ordenada pela data do evento: vencimento para cobranças e recebimento para reembolsos. Cada reembolso aparece com valor negativo e texto vermelho, além da categoria de despesa vinculada. O resumo exibe gasto bruto, reembolsos recebidos e gasto líquido. Os filtros de categoria e busca se aplicam a ambos os tipos; o filtro por meio de pagamento afeta apenas cobranças, pois reembolsos não têm meio de recebimento. Despesas e reembolsos podem ser editados e excluídos pela mesma lista, usando seus formulários e rotas correspondentes. No celular, o `SectionSwitcher` alterna entre a lista e os filtros.
+
+As telas ocupam a altura da janela, sem rolagem do documento. O arquivo `frontend/src/viewport.css` concentra as regras desse layout, importadas após os estilos visuais. Cabeçalhos e rodapé são compactos. As listas têm rolagem própria, mantendo título e total visíveis. Os campos do formulário podem rolar quando necessário, com o botão de salvar sempre disponível. Filtros, gráficos, tabelas abertas e avisos têm áreas de rolagem delimitadas. No celular (até 700 px), o componente reutilizável `SectionSwitcher` alterna entre formulário e pagamentos no cadastro, lista e filtros no histórico mensal e, no consolidado, entre evolução mensal, categorias e filtros. O rascunho do formulário é preservado ao alternar seções. A edição abre o formulário e foca a descrição, sem rolar a página inteira. O gráfico mensal adapta suas dimensões e a quantidade de rótulos à largura disponível.
 
 Na lista de compras recentes há ações de edição e exclusão. A edição preenche o formulário, muda sutilmente a cor do painel para evidenciar o modo de edição e usa `PUT /expenses/{id}`; há opção de cancelar. A exclusão pede confirmação em um modal sobreposto, mostra a descrição e avisa quando todas as parcelas serão removidas. É possível cancelar pelo botão, pela tecla Escape ou pelo fundo; falhas aparecem no modal. O formulário exibe rótulos e validações junto aos campos, além de mensagens de sucesso ou erro.
 
@@ -50,7 +52,7 @@ O consolidado usa `GET /expenses/summary` para apresentar total, evolução mens
 
 O cliente HTTP usa `/api` por padrão, com opção de configurar `VITE_API_BASE_URL` no ambiente de compilação. No desenvolvimento e no preview, o Vite encaminha `/api` ao endereço de `BACKEND_PROXY_TARGET` (padrão `http://127.0.0.1:8000`) e remove o prefixo antes de enviar ao backend. As variáveis e exemplos estão em `frontend/.env.example` e `frontend/README.md`. Configurações `VITE_` são públicas no navegador e não devem conter credenciais. O proxy do Vite não serve como proxy de produção: a hospedagem deve encaminhar `/api` ao backend removendo o prefixo, ou definir uma URL pública de API na compilação; URLs de outra origem exigem CORS, que o backend ainda não configura. A hospedagem também deve encaminhar as rotas da interface para `index.html`. Ver chamadas a `localhost:5173/api/...` no navegador é esperado quando o proxy está ativo. Se a resposta for HTML da SPA em vez de JSON, conferir o endereço, o proxy e reiniciar o Vite; o cliente identifica esse caso e usa tempo limite de 15 segundos para evitar carregamento indefinido.
 
-O cache compartilhado deduplica consultas, mantém referências por 30 minutos e resultados por 2 minutos e cancela leituras sem observadores. Cadastro e edição invalidam a lista de pagamentos do mês e o consolidado; exclusão invalida a lista e o consolidado. A busca do consolidado usa debounce, e o período personalizado é aplicado explicitamente para evitar requisições intermediárias desnecessárias.
+O cache compartilhado deduplica consultas, mantém referências por 30 minutos e resultados por 2 minutos e cancela leituras sem observadores. Cadastro, edição e exclusão de despesas invalidam as consultas de despesas, incluindo pagamentos do mês, histórico mensal e consolidado. Alterações em entradas invalidam as listas de entradas e o consolidado; na tela de histórico mensal também atualizam o resumo líquido e a lista de reembolsos. A busca do consolidado e do histórico mensal usa debounce; o período personalizado do consolidado é aplicado explicitamente para evitar requisições intermediárias desnecessárias.
 
 Na revisão do layout, os cenários de API indisponível revelaram rejeições não tratadas nas chamadas deduplicadas do cache. O retorno dessas chamadas foi alinhado ao tratamento já existente da consulta original: falhas continuam no snapshot para exibição na interface, sem rejeitar uma promessa ignorada pelos assinantes. O cenário foi reproduzido e verificado no navegador.
 
@@ -84,6 +86,8 @@ Implementado em 22/10/2026. O módulo `income_entries` usa `income_categories` e
 
 `GET /income-categories` lista as categorias. `GET/POST /income-entries`, `PUT /income-entries/{id}` e `DELETE /income-entries/{id}` implementam a lista paginada e CRUD. Reembolso exige `expense_category_id`; salário e outras categorias de entrada não a aceitam. O formulário permite criar, editar e excluir entradas, e mostra os recebimentos do mês.
 
+`GET /expenses/history?month=YYYY-MM` devolve uma página única combinando cobranças e reembolsos do mês. A ordenação é global pela data do evento (vencimento da cobrança ou recebimento do reembolso), com `kind` distinguindo os tipos; o valor armazenado continua positivo e a interface exibe reembolsos negativos e em vermelho. Aceita `page`, `page_size` (máximo 100), `search`, `category_id` e `payment_method_id`; categoria e busca filtram ambos os tipos, enquanto meio de pagamento filtra apenas cobranças e mantém reembolsos na lista. Os totais `gross_expense_amount`, `reimbursement_amount` e `net_expense_amount` abrangem todos os itens filtrados, não apenas a página atual.
+
 `GET /expenses/summary` devolve bruto, reembolso e líquido por mês e categoria. O bruto considera vencimentos de parcelas; o reembolso considera a data em que o dinheiro entrou. `total_amount_due` e `amount_due` mantêm compatibilidade como aliases do líquido. Se filtrar por meio de pagamento, o resumo não subtrai reembolsos, pois entradas ainda não têm meio de recebimento.
 
 ## Execução local
@@ -116,7 +120,7 @@ Para os testes do backend:
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Os testes usam SQLite em memória, não o PostgreSQL local. Em 22/10/2026, os 35 testes passaram após acrescentar cobertura para entradas e reembolsos. O build do frontend também foi concluído. A migração `20261022_0006` foi aplicada ao PostgreSQL local; as tabelas e categorias iniciais foram criadas sem alterar despesas existentes.
+Os testes usam SQLite em memória, não o PostgreSQL local. Em 22/10/2026, os 36 testes passaram após acrescentar cobertura para entradas, reembolsos e histórico combinado. O build do frontend também foi concluído. A migração `20261022_0006` foi aplicada ao PostgreSQL local; as tabelas e categorias iniciais foram criadas sem alterar despesas existentes.
 
 ## Git e GitHub
 

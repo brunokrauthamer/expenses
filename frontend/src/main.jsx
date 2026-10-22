@@ -7,6 +7,7 @@ import './viewport.css';
 
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage.jsx'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage.jsx'));
+const ExpenseHistoryPage = lazy(() => import('./pages/ExpenseHistoryPage.jsx'));
 
 function Header({ activeRoute }) {
   return (
@@ -21,6 +22,9 @@ function Header({ activeRoute }) {
         </AppLink>
         <AppLink className={`nav-link${activeRoute === '/consolidado' ? ' is-active' : ''}`} to="/consolidado" aria-current={activeRoute === '/consolidado' ? 'page' : undefined}>
           <Icon name="overview" /> Gastos consolidados
+        </AppLink>
+        <AppLink className={`nav-link${activeRoute === '/gastos' ? ' is-active' : ''}`} to="/gastos" aria-current={activeRoute === '/gastos' ? 'page' : undefined}>
+          <Icon name="entry" /> Gastos do mês
         </AppLink>
       </nav>
       <span className="topbar-note"><span className="status-dot" /> Seu espaço financeiro</span>
@@ -49,6 +53,7 @@ function App() {
   let page;
   if (activeRoute === '/despesas') page = <ExpensesPage />;
   else if (activeRoute === '/consolidado') page = <ReportsPage />;
+  else if (activeRoute === '/gastos') page = <ExpenseHistoryPage />;
   else page = (
     <section className="panel route-error" aria-labelledby="not-found-heading">
       <span className="step-number">404</span>

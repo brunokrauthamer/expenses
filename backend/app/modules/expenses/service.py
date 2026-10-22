@@ -2,13 +2,14 @@ from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import Integer, case, delete, func, literal, or_, select, union_all
 from sqlalchemy.orm import Session, selectinload
 
 from app.modules.categories.model import Category
 from app.modules.expenses.model import Expense, ExpenseInstallment
 from app.modules.expenses.schema import ExpenseCreate, ExpenseUpdate
 from app.modules.income_entries.service import reimbursement_totals
+from app.modules.income_entries.model import IncomeCategory, IncomeEntry
 from app.modules.payment_methods.model import PaymentMethod
 from app.shared.exceptions import ResourceNotFoundError
 
@@ -52,6 +53,98 @@ def list_expenses(
         .where(*filters)
     )
     return list(database.scalars(statement)), database.scalar(count_statement) or 0
+
+
+def list_expense_history(
+    database: Session,
+    page: int,
+    page_size: int,
+    month: str,
+    search: str | None = None,
+    category_id: int | None = None,
+    payment_method_id: int | None = None,
+):
+    """Combina cobranças e reembolsos em uma lista ordenada por data do evento."""
+    expense_from, expense_filters = _filtered_expenses(
+        month=month,
+        search=search,
+        category_id=category_id,
+        payment_method_id=payment_method_id,
+    )
+    expense_rows = select(
+        literal("expense").label("kind"),
+        Expense.id.label("id"),
+        ExpenseInstallment.id.label("installment_id"),
+        Expense.description.label("description"),
+        ExpenseInstallment.due_date.label("event_date"),
+        ExpenseInstallment.amount.label("amount"),
+        Expense.category_id.label("category_id"),
+        Expense.payment_method_id.label("payment_method_id"),
+        case((Expense.installment_count == 1, "one_time"), else_="installments").label("payment_type"),
+        ExpenseInstallment.installment_number.label("installment_number"),
+        Expense.installment_count.label("installment_count"),
+        Expense.first_installment_date.label("first_installment_date"),
+        Expense.amount.label("total_amount"),
+    ).select_from(expense_from).where(*expense_filters)
+
+    year, month_number = map(int, month.split("-"))
+    first_day = date(year, month_number, 1)
+    last_day = date(year, month_number, monthrange(year, month_number)[1])
+    reimbursement_filters = [
+        IncomeEntry.received_date.between(first_day, last_day),
+        IncomeCategory.requires_expense_category.is_(True),
+    ]
+    if category_id is not None:
+        reimbursement_filters.append(IncomeEntry.expense_category_id == category_id)
+    normalized_search = search.strip() if search else ""
+    if normalized_search:
+        pattern = f"%{normalized_search}%"
+        reimbursement_filters.append(or_(
+            IncomeEntry.description.ilike(pattern),
+            IncomeCategory.name.ilike(pattern),
+            Category.name.ilike(pattern),
+        ))
+    reimbursement_from = (
+        IncomeEntry.__table__
+        .join(IncomeCategory.__table__, IncomeEntry.income_category_id == IncomeCategory.id)
+        .join(Category.__table__, IncomeEntry.expense_category_id == Category.id)
+    )
+    reimbursement_rows = select(
+        literal("reimbursement").label("kind"),
+        IncomeEntry.id.label("id"),
+        literal(None, type_=Integer).label("installment_id"),
+        IncomeEntry.description.label("description"),
+        IncomeEntry.received_date.label("event_date"),
+        IncomeEntry.amount.label("amount"),
+        IncomeEntry.expense_category_id.label("category_id"),
+        literal(None, type_=Integer).label("payment_method_id"),
+        literal(None).label("payment_type"),
+        literal(None, type_=Integer).label("installment_number"),
+        literal(None, type_=Integer).label("installment_count"),
+        literal(None).label("first_installment_date"),
+        literal(None).label("total_amount"),
+    ).select_from(reimbursement_from).where(*reimbursement_filters)
+
+    combined = union_all(expense_rows, reimbursement_rows).subquery()
+    total = database.scalar(select(func.count()).select_from(combined)) or 0
+    amounts_by_kind = dict(database.execute(
+        select(combined.c.kind, func.sum(combined.c.amount)).group_by(combined.c.kind)
+    ).all())
+    gross_amount = amounts_by_kind.get("expense") or Decimal("0.00")
+    reimbursement_amount = amounts_by_kind.get("reimbursement") or Decimal("0.00")
+    statement = (
+        select(combined)
+        .order_by(combined.c.event_date.desc(), combined.c.id.desc(), combined.c.kind.asc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return (
+        list(database.execute(statement).mappings()),
+        total,
+        gross_amount,
+        reimbursement_amount,
+        gross_amount - reimbursement_amount,
+    )
 
 
 def list_recent_expenses(database: Session, limit: int) -> list[Expense]:

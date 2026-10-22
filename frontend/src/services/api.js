@@ -72,9 +72,34 @@ export const api = {
     const params = new URLSearchParams();
     if (filters.startMonth) params.set('start_month', filters.startMonth);
     if (filters.endMonth) params.set('end_month', filters.endMonth);
+    if (filters.incomeCategoryId) params.set('income_category_id', filters.incomeCategoryId);
+    if (filters.expenseCategoryId) params.set('expense_category_id', filters.expenseCategoryId);
+    if (filters.search) params.set('search', filters.search);
+    if (filters.page) params.set('page', String(filters.page));
+    if (filters.pageSize) params.set('page_size', String(filters.pageSize));
     return request(`/income-entries?${params}`, { signal });
   },
   getRecentExpenses: (month, signal) => request(`/expenses/month?month=${month}`, { signal }),
+  getExpenseHistory: (filters, signal) => {
+    const params = new URLSearchParams();
+    params.set('month', filters.month);
+    params.set('page', String(filters.page ?? 1));
+    params.set('page_size', String(filters.pageSize ?? 100));
+    if (filters.categoryId) params.set('category_id', filters.categoryId);
+    if (filters.paymentMethodId) params.set('payment_method_id', filters.paymentMethodId);
+    if (filters.search) params.set('search', filters.search);
+    return request(`/expenses/history?${params}`, { signal });
+  },
+  getExpenses: (filters, signal) => {
+    const params = new URLSearchParams();
+    params.set('month', filters.month);
+    params.set('page', String(filters.page ?? 1));
+    params.set('page_size', String(filters.pageSize ?? 100));
+    if (filters.categoryId) params.set('category_id', filters.categoryId);
+    if (filters.paymentMethodId) params.set('payment_method_id', filters.paymentMethodId);
+    if (filters.search) params.set('search', filters.search);
+    return request(`/expenses?${params}`, { signal });
+  },
   getSummary: (filters, signal) => {
     const params = new URLSearchParams();
     params.set('start_month', filters.startMonth);

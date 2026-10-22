@@ -80,6 +80,8 @@ A migração `20261022_0006` cria `income_categories` e `income_entries`. Depois
 
 Toda entrada usa valor positivo e data de recebimento. Categorias com `requires_expense_category=true` (Reembolso) exigem `expense_category_id`; as demais rejeitam esse campo. Salários e outros ganhos não reduzem despesas.
 
+`GET /expenses/history?month=AAAA-MM` retorna cobranças e reembolsos em uma página combinada, globalmente ordenada pelo vencimento ou recebimento, conforme o tipo. Aceita `page`, `page_size` (até 100), `search`, `category_id` e `payment_method_id`. Busca e categoria se aplicam aos dois tipos; meio de pagamento filtra cobranças, mantendo reembolsos. A resposta identifica cada linha por `kind` e inclui os totais brutos, de reembolso e líquidos sobre todos os resultados filtrados. Os valores dos itens permanecem positivos na API; a interface mostra reembolsos negativos e em vermelho.
+
 `GET /expenses/summary` retorna `gross_expense_amount`, `reimbursement_amount` e `net_expense_amount`, também detalhados em `monthly_totals` e `category_totals`. A regra é bruto por vencimento das parcelas menos reembolsos pela data de recebimento. `amount_due` e `total_amount_due` continuam no contrato como aliases do valor líquido. Um filtro por meio de pagamento exclui reembolsos do resumo, pois ainda não há meio de recebimento associado a eles.
 
 ## Testes

@@ -18,8 +18,14 @@ body { min-height: 0; }
 .content-grid, .reports-layout { flex: 1; min-height: 0; align-items: stretch; gap: 18px; padding: 0; }
 .content-grid { grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr); }
 .reports-layout { grid-template-columns: 270px minmax(0, 1fr); }
+.history-layout { display: grid; flex: 1; min-height: 0; grid-template-columns: 270px minmax(0, 1fr); align-items: stretch; gap: 18px; padding: 0; }
+.history-layout.is-editing { grid-template-columns: minmax(0, 1fr); }
+.history-results { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+.history-net-total { min-height: 92px; padding: 14px 20px; }
+.history-net-total .summary-total { font-size: 26px; }
+.history-net-total .summary-caption { margin-top: 3px; }
 .panel { min-height: 0; padding: 20px; }
-.form-panel, .list-panel, .filter-panel, .chart-panel { display: flex; flex-direction: column; overflow: hidden; }
+.form-panel, .list-panel, .filter-panel, .chart-panel, .history-list-panel, .history-form-panel { display: flex; flex-direction: column; overflow: hidden; }
 .section-heading { flex: 0 0 auto; gap: 10px; margin-bottom: 16px; }
 .section-heading h2 { font-size: 16px; }
 .section-heading p { font-size: 11px; }
@@ -54,6 +60,11 @@ body { min-height: 0; }
 .monthly-income-section > .empty-state, .monthly-payments-section > .empty-state { flex: 1; min-height: 0; }
 
 .filter-panel { position: static; }
+.history-filter-panel { position: static; }
+.history-list-panel > .expense-list { flex: 1; align-content: start; }
+.reimbursement-amount { color: #8b5660; }
+.history-pagination { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid #f0f0f5; }
+.history-pagination > span { color: #7b8299; font-size: 10px; text-align: center; }
 .filter-panel .section-heading { margin-bottom: 16px; }
 .filter-content { margin: -4px; padding: 4px; }
 .filter-grid { grid-template-columns: minmax(0, 1fr); gap: 12px 10px; }
@@ -121,6 +132,7 @@ body { min-height: 0; }
   .topbar-note { font-size: 10px; }
   .main-nav { grid-column: 1 / -1; grid-row: 2; gap: 6px; }
   .nav-link { flex: 1; min-height: 44px; justify-content: center; padding-inline: 5px; font-size: 11px; }
+  .main-nav .nav-link > svg { display: none; }
   .intro { padding: 16px 0 14px; }
   .intro h1 { font-size: clamp(21px, 5.2vw, 28px); letter-spacing: -.7px; }
   .eyebrow { font-size: 9px; }
@@ -128,11 +140,16 @@ body { min-height: 0; }
   .section-switcher { display: flex; flex: 0 0 auto; gap: 4px; margin-bottom: 12px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: #eceef3; }
   .section-switcher button { flex: 1; min-height: 40px; padding: 6px; border: 0; border-radius: 8px; background: transparent; color: #596477; cursor: pointer; font-size: 12px; font-weight: 600; }
   .section-switcher button[aria-pressed="true"] { background: #fff; box-shadow: 0 2px 5px #19233a0a; color: var(--accent-dark); }
-  .content-grid, .reports-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0; }
+  .content-grid, .reports-layout, .history-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 0; }
   .content-grid[data-active-section="form"] > .list-panel,
   .content-grid[data-active-section="payments"] > .form-panel,
   .reports-layout:not([data-active-section="filters"]) > .filter-panel,
   .reports-layout[data-active-section="filters"] > .report-results { display: none; }
+  .history-layout:not([data-active-section="filters"]) > .history-filter-panel,
+  .history-layout[data-active-section="filters"] > .history-results { display: none; }
+  .history-net-total { min-height: 88px; padding: 12px 15px; }
+  .history-net-total .summary-total { font-size: 24px; }
+  .history-net-total .summary-caption { font-size: 10px; }
   .reports-layout[data-active-section="monthly"] .categories-panel,
   .reports-layout[data-active-section="categories"] .monthly-panel { display: none; }
   .panel { padding: 16px; }
