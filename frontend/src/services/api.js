@@ -67,6 +67,13 @@ async function request(path, { signal, method = 'GET', body } = {}) {
 export const api = {
   getCategories: (signal) => request('/categories', { signal }),
   getPaymentMethods: (signal) => request('/payment-methods', { signal }),
+  getIncomeCategories: (signal) => request('/income-categories', { signal }),
+  getIncomeEntries: (filters = {}, signal) => {
+    const params = new URLSearchParams();
+    if (filters.startMonth) params.set('start_month', filters.startMonth);
+    if (filters.endMonth) params.set('end_month', filters.endMonth);
+    return request(`/income-entries?${params}`, { signal });
+  },
   getRecentExpenses: (month, signal) => request(`/expenses/month?month=${month}`, { signal }),
   getSummary: (filters, signal) => {
     const params = new URLSearchParams();
@@ -80,4 +87,7 @@ export const api = {
   createExpense: (expense) => request('/expenses', { method: 'POST', body: expense }),
   updateExpense: (expenseId, expense) => request(`/expenses/${expenseId}`, { method: 'PUT', body: expense }),
   deleteExpense: (expenseId) => request(`/expenses/${expenseId}`, { method: 'DELETE' }),
+  createIncomeEntry: (entry) => request('/income-entries', { method: 'POST', body: entry }),
+  updateIncomeEntry: (entryId, entry) => request(`/income-entries/${entryId}`, { method: 'PUT', body: entry }),
+  deleteIncomeEntry: (entryId) => request(`/income-entries/${entryId}`, { method: 'DELETE' }),
 };

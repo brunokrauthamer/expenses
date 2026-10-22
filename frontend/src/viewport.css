@@ -16,7 +16,7 @@ body { min-height: 0; }
 .footer { flex: 0 0 auto; align-items: center; padding: 12px 2px; font-size: 10px; }
 
 .content-grid, .reports-layout { flex: 1; min-height: 0; align-items: stretch; gap: 18px; padding: 0; }
-.content-grid { grid-template-columns: minmax(0, .95fr) minmax(0, 1.15fr); }
+.content-grid { grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr); }
 .reports-layout { grid-template-columns: 270px minmax(0, 1fr); }
 .panel { min-height: 0; padding: 20px; }
 .form-panel, .list-panel, .filter-panel, .chart-panel { display: flex; flex-direction: column; overflow: hidden; }
@@ -102,6 +102,7 @@ body { min-height: 0; }
   .category-chart .chart-data-table { grid-column: 1 / -1; }
   .panel { padding: 18px; }
   .content-grid { gap: 14px; }
+  .content-grid { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); }
   .expense-item { flex-wrap: wrap; gap: 8px; padding-block: 10px; }
   .expense-details { flex-basis: calc(100% - 48px); }
   .expense-amount { margin-left: 44px; }

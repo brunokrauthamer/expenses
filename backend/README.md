@@ -70,6 +70,18 @@ Uma requisição parcelada pode usar, por exemplo, `"amount": "1200.00"`, `"amou
 
 O PUT continua atualizando o gasto inteiro. Mudanças no valor, nas datas ou na quantidade recalculam o cronograma; mudanças apenas na descrição, categoria ou meio de pagamento preservam as cobranças. DELETE remove o gasto e todas as cobranças. A documentação interativa fica em `/docs` enquanto o servidor está em execução.
 
+## Entradas e reembolsos
+
+A migração `20261022_0006` cria `income_categories` e `income_entries`. Depois de atualizar o banco, execute `python -m app.seed` para cadastrar Salário e Reembolso. O seeder pode ser repetido.
+
+- `GET /income-categories` lista as categorias de entrada e informa `requires_expense_category`.
+- `GET /income-entries` lista entradas paginadas; aceita `start_month`, `end_month`, `income_category_id`, `expense_category_id` e `search`.
+- `POST /income-entries`, `PUT /income-entries/{id}` e `DELETE /income-entries/{id}` fazem o CRUD de entradas.
+
+Toda entrada usa valor positivo e data de recebimento. Categorias com `requires_expense_category=true` (Reembolso) exigem `expense_category_id`; as demais rejeitam esse campo. Salários e outros ganhos não reduzem despesas.
+
+`GET /expenses/summary` retorna `gross_expense_amount`, `reimbursement_amount` e `net_expense_amount`, também detalhados em `monthly_totals` e `category_totals`. A regra é bruto por vencimento das parcelas menos reembolsos pela data de recebimento. `amount_due` e `total_amount_due` continuam no contrato como aliases do valor líquido. Um filtro por meio de pagamento exclui reembolsos do resumo, pois ainda não há meio de recebimento associado a eles.
+
 ## Testes
 
 Instale as dependências de desenvolvimento e execute os testes a partir da pasta `backend`:

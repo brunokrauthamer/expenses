@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.modules.categories.model import Category
 from app.modules.expenses.model import Expense, ExpenseInstallment
 from app.modules.expenses.schema import ExpenseCreate, ExpenseUpdate
+from app.modules.income_entries.service import reimbursement_totals
 from app.modules.payment_methods.model import PaymentMethod
 from app.shared.exceptions import ResourceNotFoundError
 
@@ -123,22 +124,42 @@ def get_expense_summary(
             category_amounts.get(expense_category_id, Decimal("0.00")) + amount
         )
 
-    months = _months_between(start_month, end_month)
-    monthly_totals = [
-        {"month": month, "amount_due": month_amounts.get(month, Decimal("0.00"))}
-        for month in months
-    ]
-    category_totals = [
-        {"category_id": expense_category_id, "amount_due": amount}
-        for expense_category_id, amount in sorted(
-            category_amounts.items(), key=lambda item: (-item[1], item[0])
-        )
-    ]
-    total_amount_due = sum(
-        (row["amount_due"] for row in monthly_totals), Decimal("0.00")
+    reimbursement_months, reimbursement_categories = reimbursement_totals(
+        database, start_month, end_month, category_id, search,
+        include=payment_method_id is None,
     )
+    months = _months_between(start_month, end_month)
+    monthly_totals = []
+    for month in months:
+        gross = month_amounts.get(month, Decimal("0.00"))
+        reimbursement = reimbursement_months.get(month, Decimal("0.00"))
+        monthly_totals.append({
+            "month": month,
+            "amount_due": gross - reimbursement,
+            "gross_expense_amount": gross,
+            "reimbursement_amount": reimbursement,
+            "net_expense_amount": gross - reimbursement,
+        })
+    category_totals = []
+    for expense_category_id in set(category_amounts) | set(reimbursement_categories):
+        gross = category_amounts.get(expense_category_id, Decimal("0.00"))
+        reimbursement = reimbursement_categories.get(expense_category_id, Decimal("0.00"))
+        category_totals.append({
+            "category_id": expense_category_id,
+            "amount_due": gross - reimbursement,
+            "gross_expense_amount": gross,
+            "reimbursement_amount": reimbursement,
+            "net_expense_amount": gross - reimbursement,
+        })
+    category_totals.sort(key=lambda row: (-row["net_expense_amount"], row["category_id"]))
+    gross_total = sum(month_amounts.values(), Decimal("0.00"))
+    reimbursement_total = sum(reimbursement_months.values(), Decimal("0.00"))
+    net_total = gross_total - reimbursement_total
     return {
-        "total_amount_due": total_amount_due,
+        "total_amount_due": net_total,
+        "gross_expense_amount": gross_total,
+        "reimbursement_amount": reimbursement_total,
+        "net_expense_amount": net_total,
         "monthly_totals": monthly_totals,
         "category_totals": category_totals,
     }

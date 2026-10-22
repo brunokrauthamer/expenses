@@ -76,7 +76,15 @@ Tabelas definidas pelo código e migrações:
 - `expenses`: `id` BIGINT, `description` VARCHAR(120), `amount` NUMERIC(12,2) positivo (total da compra), `expense_date` DATE, `installment_count` INTEGER, `first_installment_date` DATE, `category_id` BIGINT, `payment_method_id` INTEGER e `created_at` com fuso horário. As referências são obrigatórias e usam chaves estrangeiras com restrição de exclusão.
 - `expense_installments`: `id` BIGINT, `expense_id` BIGINT (exclusão em cascata), `installment_number` INTEGER, `amount` NUMERIC(12,2) positivo e `due_date` DATE. Cada compra tem ao menos uma cobrança; o par `(expense_id, installment_number)` é único.
 
-As migrações do código e do PostgreSQL local terminam em `20261018_0004` (`expense_installments` e campos do cronograma). Ela foi aplicada partindo de `20261018_0003` e converte cada gasto preexistente em uma cobrança única. Uma verificação posterior não encontrou gastos com soma ou quantidade de parcelas inconsistente.
+`20261018_0004` adicionou `expense_installments` e os campos do cronograma, convertendo cada gasto preexistente em uma cobrança única. A revisão mais recente está descrita na seção Entradas e reembolsos abaixo.
+
+## Entradas e reembolsos
+
+Implementado em 22/10/2026. O módulo `income_entries` usa `income_categories` e `income_entries`; o seeder cria Salário e Reembolso. A revisão Alembic `20261022_0006` foi aplicada ao PostgreSQL local partindo de `20261019_0005`, sem atualizar despesas existentes.
+
+`GET /income-categories` lista as categorias. `GET/POST /income-entries`, `PUT /income-entries/{id}` e `DELETE /income-entries/{id}` implementam a lista paginada e CRUD. Reembolso exige `expense_category_id`; salário e outras categorias de entrada não a aceitam. O formulário permite criar, editar e excluir entradas, e mostra os recebimentos do mês.
+
+`GET /expenses/summary` devolve bruto, reembolso e líquido por mês e categoria. O bruto considera vencimentos de parcelas; o reembolso considera a data em que o dinheiro entrou. `total_amount_due` e `amount_due` mantêm compatibilidade como aliases do líquido. Se filtrar por meio de pagamento, o resumo não subtrai reembolsos, pois entradas ainda não têm meio de recebimento.
 
 ## Execução local
 
@@ -108,7 +116,7 @@ Para os testes do backend:
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-Os testes usam SQLite em memória, não o PostgreSQL local. Em 19/10/2026, os 32 testes passaram, incluindo a importação de despesas; a dependência `openpyxl==3.1.5`, já declarada no projeto, foi instalada no ambiente virtual existente para completar a execução. O frontend não declara script de testes. O build foi concluído e o layout foi verificado com Playwright e Edge em modo headless, com respostas de API simuladas, sem alterar dados reais. Foram verificadas oito resoluções, de 320×568 a 1440×900, incluindo celular em paisagem: ausência de rolagem do documento e de transbordamento horizontal, rolagem independente da lista com 65 pagamentos, parcelamento, preservação do rascunho, foco ao editar, cancelamento do modal, filtros inválidos e tabelas abertas. Estados vazios, falha de API e envio do formulário também foram conferidos em quatro resoluções. Capturas de desktop e celular foram inspecionadas visualmente. O teclado virtual de um aparelho físico não foi testado. A migração Alembic registrada é `20261018_0004`, sem alterações nestas melhorias de frontend.
+Os testes usam SQLite em memória, não o PostgreSQL local. Em 22/10/2026, os 35 testes passaram após acrescentar cobertura para entradas e reembolsos. O build do frontend também foi concluído. A migração `20261022_0006` foi aplicada ao PostgreSQL local; as tabelas e categorias iniciais foram criadas sem alterar despesas existentes.
 
 ## Git e GitHub
 

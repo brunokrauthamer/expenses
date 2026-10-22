@@ -209,11 +209,11 @@ export default function ReportsPage() {
           <Panel className="summary-card report-total">
             {visibleResult ? (
               <div className={isFetching ? 'summary-value-updating' : ''}>
-                <p className="summary-label">TOTAL DAS COBRANÇAS NO PERÍODO</p>
-                <p className="summary-total">{formatMoney(visibleResult.total_amount_due)}</p>
-                <p className="summary-caption">{!summaryQuery.data && visibleFilters
-                  ? `Exibindo o período anterior: ${visibleFilters.startMonth} a ${visibleFilters.endMonth}.`
-                  : 'Soma das parcelas no mês de vencimento.'}</p>
+                <p className="summary-label">GASTO LÍQUIDO NO PERÍODO</p>
+                <p className="summary-total">{formatMoney(visibleResult.net_expense_amount ?? visibleResult.total_amount_due)}</p>
+                <p className="summary-caption">Bruto {formatMoney(visibleResult.gross_expense_amount ?? visibleResult.total_amount_due)} · Reembolsos {formatMoney(visibleResult.reimbursement_amount ?? 0)}{filters.paymentMethodId ? ' · Filtro por meio considera despesas; reembolsos não têm meio associado.' : ''}{!summaryQuery.data && visibleFilters
+                  ? ` Exibindo o período anterior: ${visibleFilters.startMonth} a ${visibleFilters.endMonth}.`
+                  : ' Parcelas por vencimento e reembolsos por data de recebimento.'}</p>
               </div>
             ) : summaryQuery.error ? (
               <div>
@@ -253,10 +253,10 @@ export default function ReportsPage() {
                 <SectionHeading number="02" title="Evolução mês a mês" description="Veja como as cobranças variam ao longo do tempo." />
                 <div className="chart-content scroll-region" role="region" aria-label="Evolução mensal e tabela de valores" tabIndex="0">
                   {!visibleResult && summaryQuery.isLoading && <div className="chart-skeleton" role="status">Carregando os valores do período…</div>}
-                  {visibleResult && visibleResult.monthly_totals.some((item) => Number(item.amount_due) > 0) && (
+                  {visibleResult && visibleResult.monthly_totals.some((item) => Number(item.amount_due) !== 0) && (
                     <MonthlyChart totals={visibleResult.monthly_totals} isUpdating={isFetching} />
                   )}
-                  {visibleResult && !visibleResult.monthly_totals.some((item) => Number(item.amount_due) > 0) && (
+                  {visibleResult && !visibleResult.monthly_totals.some((item) => Number(item.amount_due) !== 0) && (
                     <EmptyState title="Nenhuma cobrança neste período." description="Experimente ampliar as datas ou remover um filtro." eyebrow="Sem movimentação" />
                   )}
                   {visibleResult && visibleFilters && !summaryQuery.data && (
@@ -280,7 +280,7 @@ export default function ReportsPage() {
             </div>
           )}
           <div className="report-footer">
-            <p className="report-footnote">Valores por vencimento das parcelas, sem confirmação de pagamento.</p>
+            <p className="report-footnote">Despesas por vencimento das parcelas e reembolsos pela data de recebimento. Salários e outros ganhos serão apresentados no balanço financeiro.</p>
             <AppLink className="text-link back-to-entry" to="/despesas">＋ Registrar despesa</AppLink>
           </div>
         </section>

@@ -129,17 +129,20 @@ def test_summary_aggregates_due_amounts_by_month_and_category(
     assert response.status_code == 200
     assert response.json() == {
         "total_amount_due": "650.01",
+        "gross_expense_amount": "650.01",
+        "reimbursement_amount": "0.00",
+        "net_expense_amount": "650.01",
         "monthly_totals": [
-            {"month": "2026-01", "amount_due": "0.00"},
-            {"month": "2026-02", "amount_due": "200.00"},
-            {"month": "2026-03", "amount_due": "200.00"},
-            {"month": "2026-04", "amount_due": "250.01"},
-            {"month": "2026-05", "amount_due": "0.00"},
-            {"month": "2026-06", "amount_due": "0.00"},
+            {"month": "2026-01", "amount_due": "0.00", "gross_expense_amount": "0.00", "reimbursement_amount": "0.00", "net_expense_amount": "0.00"},
+            {"month": "2026-02", "amount_due": "200.00", "gross_expense_amount": "200.00", "reimbursement_amount": "0.00", "net_expense_amount": "200.00"},
+            {"month": "2026-03", "amount_due": "200.00", "gross_expense_amount": "200.00", "reimbursement_amount": "0.00", "net_expense_amount": "200.00"},
+            {"month": "2026-04", "amount_due": "250.01", "gross_expense_amount": "250.01", "reimbursement_amount": "0.00", "net_expense_amount": "250.01"},
+            {"month": "2026-05", "amount_due": "0.00", "gross_expense_amount": "0.00", "reimbursement_amount": "0.00", "net_expense_amount": "0.00"},
+            {"month": "2026-06", "amount_due": "0.00", "gross_expense_amount": "0.00", "reimbursement_amount": "0.00", "net_expense_amount": "0.00"},
         ],
         "category_totals": [
-            {"category_id": groceries.id, "amount_due": "600.00"},
-            {"category_id": leisure.id, "amount_due": "50.01"},
+            {"category_id": groceries.id, "amount_due": "600.00", "gross_expense_amount": "600.00", "reimbursement_amount": "0.00", "net_expense_amount": "600.00"},
+            {"category_id": leisure.id, "amount_due": "50.01", "gross_expense_amount": "50.01", "reimbursement_amount": "0.00", "net_expense_amount": "50.01"},
         ],
     }
 

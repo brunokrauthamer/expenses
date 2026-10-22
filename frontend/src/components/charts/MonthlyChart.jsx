@@ -19,7 +19,10 @@ export default function MonthlyChart({ totals, isUpdating }) {
 
   const chartData = useMemo(() => {
     const maxAmount = Math.max(0, ...totals.map((item) => Number(item.amount_due)));
-    const scaleMax = maxAmount > 0 ? maxAmount * 1.15 : 1;
+    const minAmount = Math.min(0, ...totals.map((item) => Number(item.amount_due)));
+    const scaleMax = maxAmount > 0 ? maxAmount * 1.15 : 0;
+    const scaleMin = minAmount < 0 ? minAmount * 1.15 : 0;
+    const range = scaleMax - scaleMin || 1;
     const plotWidth = width - PAD.left - PAD.right;
     const plotHeight = height - PAD.top - PAD.bottom;
     const slotWidth = plotWidth / Math.max(totals.length, 1);
@@ -27,14 +30,15 @@ export default function MonthlyChart({ totals, isUpdating }) {
       ...item,
       value: Number(item.amount_due),
       x: PAD.left + slotWidth * index + slotWidth / 2,
-      y: PAD.top + plotHeight * (1 - Number(item.amount_due) / scaleMax),
-      height: plotHeight * (Number(item.amount_due) / scaleMax),
+      y: PAD.top + plotHeight * ((scaleMax - Number(item.amount_due)) / range),
+      height: plotHeight * (Math.abs(Number(item.amount_due)) / range),
+      rectY: Math.min(PAD.top + plotHeight * ((scaleMax - Number(item.amount_due)) / range), PAD.top + plotHeight * (scaleMax / range)),
       width: Math.min(slotWidth * 0.62, 38),
       slotX: PAD.left + slotWidth * index,
     }));
     const ticks = [0, 1, 2, 3].map((index) => ({
       y: PAD.top + (plotHeight * index) / 3,
-      value: scaleMax * (1 - index / 3),
+      value: scaleMax - range * (index / 3),
     }));
     return { bars, plotHeight, slotWidth, ticks };
   }, [totals, width, height]);
@@ -68,7 +72,7 @@ export default function MonthlyChart({ totals, isUpdating }) {
             onBlur={() => setActiveIndex(null)}
           >
             <rect x={bar.slotX} y={PAD.top} width={chartData.slotWidth} height={chartData.plotHeight} className="chart-bar-hit-area" />
-            <rect x={bar.x - bar.width / 2} y={height - PAD.bottom - bar.height} width={bar.width} height={bar.height} rx="5" className="monthly-bar" />
+            <rect x={bar.x - bar.width / 2} y={bar.rectY} width={bar.width} height={bar.height} rx="5" className="monthly-bar" />
             <title>{formatMonth(bar.month)} · {formatMoney(bar.amount_due)}</title>
           </g>
         ))}

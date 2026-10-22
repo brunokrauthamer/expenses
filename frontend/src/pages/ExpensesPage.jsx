@@ -270,6 +270,52 @@ const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethods, expe
   );
 });
 
+const IncomeForm = memo(function IncomeForm({ categories, incomeCategories, entryToEdit, onSaved, onCancel }) {
+  const [description, setDescription] = useState(entryToEdit?.description ?? '');
+  const [amount, setAmount] = useState(entryToEdit ? formatAmountInput(String(entryToEdit.amount).replace(/\D/g, '')) : '');
+  const [receivedDate, setReceivedDate] = useState(entryToEdit?.received_date ?? todayISO());
+  const [incomeCategoryId, setIncomeCategoryId] = useState(entryToEdit ? String(entryToEdit.income_category_id) : '');
+  const [expenseCategoryId, setExpenseCategoryId] = useState(entryToEdit?.expense_category_id ? String(entryToEdit.expense_category_id) : '');
+  const [message, setMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const selectedCategory = incomeCategories.find((category) => String(category.id) === incomeCategoryId);
+
+  async function submit(event) {
+    event.preventDefault();
+    const normalizedAmount = toAmountString(amount);
+    if (!normalizedAmount) { setMessage('Informe um valor maior que zero.'); return; }
+    setIsSaving(true);
+    setMessage('');
+    try {
+      const payload = {
+        description: description.trim(), amount: normalizedAmount, received_date: receivedDate,
+        income_category_id: Number(incomeCategoryId),
+        ...(selectedCategory?.requires_expense_category ? { expense_category_id: Number(expenseCategoryId) } : {}),
+      };
+      if (entryToEdit) await api.updateIncomeEntry(entryToEdit.id, payload);
+      else await api.createIncomeEntry(payload);
+      if (!entryToEdit) { setDescription(''); setAmount(''); }
+      onSaved(); setMessage('Entrada salva com sucesso.');
+    } catch (error) { setMessage(error.message || 'Não foi possível salvar esta entrada.'); }
+    finally { setIsSaving(false); }
+  }
+
+  return <form className="expense-form" onSubmit={submit}>
+    <SectionHeading number="01" title={entryToEdit ? 'Editar entrada' : 'Nova entrada'} description="Registre um valor recebido." trailing={entryToEdit && <button className="text-button" type="button" onClick={onCancel}>Cancelar</button>} />
+    <div className="form-fields scroll-region" role="region" aria-label="Dados da entrada" tabIndex="0">
+      <label className="field full-field"><span>Descrição</span><input value={description} onChange={(event) => setDescription(event.target.value)} maxLength="120" required placeholder="Ex.: salário de outubro" /></label>
+      <div className="field-row">
+        <label className="field"><span>Valor recebido</span><div className="input-with-prefix"><span>R$</span><input inputMode="numeric" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} placeholder="0,00" required /></div></label>
+        <label className="field"><span>Data do recebimento</span><input type="date" value={receivedDate} onChange={(event) => setReceivedDate(event.target.value)} required /></label>
+      </div>
+      <label className="field"><span>Categoria da entrada</span><select value={incomeCategoryId} onChange={(event) => { setIncomeCategoryId(event.target.value); setExpenseCategoryId(''); }} required><option value="" disabled>Selecione</option>{incomeCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+      {selectedCategory?.requires_expense_category && <label className="field"><span>Categoria do gasto reembolsado</span><select value={expenseCategoryId} onChange={(event) => setExpenseCategoryId(event.target.value)} required><option value="" disabled>Selecione</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}
+    </div>
+    {message && <p className="form-message" role="status">{message}</p>}
+    <button className="submit-button" type="submit" disabled={isSaving || !incomeCategories.length}><span>{isSaving ? 'Salvando…' : entryToEdit ? 'Salvar alterações' : 'Adicionar entrada'}</span><Icon name="entry" /></button>
+  </form>;
+});
+
 function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, refetch, onEdit }) {
   const [deletingId, setDeletingId] = useState(null);
   const [expenseToDelete, setExpenseToDelete] = useState(null);
@@ -403,11 +449,27 @@ function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, r
 
 export default function ExpensesPage() {
   const [editingExpense, setEditingExpense] = useState(null);
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [entryMode, setEntryMode] = useState(false);
   const [activeSection, setActiveSection] = useState('form');
   const fetchRecentExpenses = useCallback(({ signal }) => api.getRecentExpenses(CURRENT_MONTH, signal), []);
   const { categoriesQuery, paymentMethodsQuery, categories, paymentMethods } = useExpenseLookups();
+  const incomeCategoriesQuery = useApiQuery(['income-categories'], ({ signal }) => api.getIncomeCategories(signal));
+  const incomeCategories = incomeCategoriesQuery.data ?? [];
   const recentQuery = useApiQuery(RECENT_QUERY_KEY, fetchRecentExpenses);
   const lookupsAreReady = categories.length > 0 && paymentMethods.length > 0;
+  const fetchMonthlyIncome = useCallback(({ signal }) => api.getIncomeEntries({ startMonth: CURRENT_MONTH, endMonth: CURRENT_MONTH }, signal), []);
+  const incomeQuery = useApiQuery(['income-entries', CURRENT_MONTH], fetchMonthlyIncome);
+  const refreshIncome = useCallback(() => {
+    invalidateCachedQueries(['income-entries']);
+    invalidateCachedQueries(['expenses', 'summary']);
+    setEditingEntry(null);
+  }, []);
+  const deleteIncomeEntry = useCallback(async (entry) => {
+    if (!window.confirm(`Excluir a entrada “${entry.description}”?`)) return;
+    try { await api.deleteIncomeEntry(entry.id); refreshIncome(); }
+    catch (error) { window.alert(error.message || 'Não foi possível excluir esta entrada.'); }
+  }, [refreshIncome]);
   const lookupsAreLoading = categoriesQuery.isLoading || paymentMethodsQuery.isLoading;
   const startEditing = useCallback((expense) => {
     setEditingExpense(expense);
@@ -427,6 +489,7 @@ export default function ExpensesPage() {
       ]} />
       <div className="content-grid" data-active-section={activeSection}>
         <Panel className={`form-panel${editingExpense ? ' is-editing' : ''}`} id="expense-form-panel">
+          {!editingExpense && <div className="payment-choice entry-mode-choice" role="group" aria-label="Tipo de registro"><button className={`choice-option${!entryMode ? ' is-selected' : ''}`} type="button" onClick={() => setEntryMode(false)}>Despesa</button><button className={`choice-option${entryMode ? ' is-selected' : ''}`} type="button" onClick={() => setEntryMode(true)}>Entrada</button></div>}
           {!lookupsAreReady && (categoriesQuery.error || paymentMethodsQuery.error) && (
             <div className="query-state error-state" role="alert">
               <p>{getQueryErrorMessage(categoriesQuery.error || paymentMethodsQuery.error)}</p>
@@ -442,10 +505,18 @@ export default function ExpensesPage() {
           {paymentMethodsQuery.data?.length === 0 && !paymentMethodsQuery.isLoading && (
             <p className="form-message error-message" role="alert">Cadastre um meio de pagamento antes de continuar.</p>
           )}
-          {lookupsAreReady && <ExpenseForm key={editingExpense?.id ?? 'new'} categories={categories} paymentMethods={paymentMethods} expenseToEdit={editingExpense} onCancelEdit={() => setEditingExpense(null)} />}
+          {entryMode && !editingExpense && <IncomeForm key={editingEntry?.id ?? 'new-income'} categories={categories} incomeCategories={incomeCategories} entryToEdit={editingEntry} onSaved={refreshIncome} onCancel={() => setEditingEntry(null)} />}
+          {!entryMode && lookupsAreReady && <ExpenseForm key={editingExpense?.id ?? 'new'} categories={categories} paymentMethods={paymentMethods} expenseToEdit={editingExpense} onCancelEdit={() => setEditingExpense(null)} />}
         </Panel>
 
         <Panel className="list-panel" id="monthly-payments-panel">
+          <div className="section-heading list-heading"><div className="list-heading-copy"><h2>Entradas deste mês</h2><p>Valores recebidos no mês selecionado.</p></div></div>
+          {incomeQuery.error && <p className="form-message error-message" role="alert">Não foi possível carregar as entradas.</p>}
+          {incomeQuery.data?.items?.length ? <ul className="expense-list scroll-region" aria-label="Entradas recebidas neste mês">{incomeQuery.data.items.map((entry) => {
+            const type = incomeCategories.find((category) => category.id === entry.income_category_id)?.name ?? 'Entrada';
+            const expenseCategory = categories.find((category) => category.id === entry.expense_category_id)?.name;
+            return <li className="expense-item" key={entry.id}><span className="expense-symbol" aria-hidden="true">{type.slice(0, 1)}</span><div className="expense-details"><strong>{entry.description}</strong><span>{type}{expenseCategory ? ` · ${expenseCategory}` : ''} · {formatDate(entry.received_date)}</span></div><strong className="expense-amount">{formatMoney(entry.amount)}</strong><div className="expense-actions"><button className="icon-button" type="button" onClick={() => { setEditingEntry(entry); setEntryMode(true); setActiveSection('form'); }} aria-label={`Editar ${entry.description}`} title="Editar entrada"><Icon name="edit" size={16} /></button><button className="icon-button delete-button" type="button" onClick={() => deleteIncomeEntry(entry)} aria-label={`Excluir ${entry.description}`} title="Excluir entrada"><Icon name="trash" size={16} /></button></div></li>;
+          })}</ul> : <EmptyState title="Nenhuma entrada neste mês." description="Salário e reembolsos aparecerão aqui após o cadastro." />}
           <ExpenseList
             expenses={recentQuery.data}
             categories={categories}

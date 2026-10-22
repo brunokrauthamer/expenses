@@ -111,14 +111,23 @@ class ExpensePage(BaseModel):
 class ExpenseMonthTotal(BaseModel):
     month: str
     amount_due: Decimal
+    gross_expense_amount: Decimal
+    reimbursement_amount: Decimal
+    net_expense_amount: Decimal
 
 
 class ExpenseCategoryTotal(BaseModel):
     category_id: int
     amount_due: Decimal
+    gross_expense_amount: Decimal
+    reimbursement_amount: Decimal
+    net_expense_amount: Decimal
 
 
 class ExpenseSummaryResponse(BaseModel):
     total_amount_due: Decimal
+    gross_expense_amount: Decimal
+    reimbursement_amount: Decimal
+    net_expense_amount: Decimal
     monthly_totals: list[ExpenseMonthTotal]
     category_totals: list[ExpenseCategoryTotal]
