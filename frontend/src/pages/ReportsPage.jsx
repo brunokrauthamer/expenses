@@ -19,7 +19,7 @@ function validMonth(value) {
 
 function defaultFilters() {
   const endMonth = currentMonthISO();
-  return { startMonth: shiftMonth(endMonth, -11), endMonth, categoryId: '', paymentMethodId: '', search: '' };
+  return { startMonth: endMonth, endMonth, categoryId: '', paymentMethodId: '', search: '' };
 }
 
 function readFilters(search) {

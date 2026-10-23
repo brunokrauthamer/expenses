@@ -27,7 +27,7 @@ expenses/
     app/config.py         Leitura de configuração
     app/database.py       Engine, sessão e base do SQLAlchemy
     app/main.py           Aplicação e registro das rotas
-    app/modules/          Domínios categories, expenses e payment_methods
+    app/modules/          Domínios auth, categories, expenses, income_entries e payment_methods
     app/shared/           Dependências e exceções compartilhadas
     migrations/           Migrações Alembic
     tests/                Testes da API
@@ -89,6 +89,12 @@ Implementado em 22/10/2026. O módulo `income_entries` usa `income_categories` e
 `GET /expenses/history?month=YYYY-MM` devolve uma página única combinando cobranças e reembolsos do mês. A ordenação é global pela data do evento (vencimento da cobrança ou recebimento do reembolso), com `kind` distinguindo os tipos; o valor armazenado continua positivo e a interface exibe reembolsos negativos e em vermelho. Aceita `page`, `page_size` (máximo 100), `search`, `category_id` e `payment_method_id`; categoria e busca filtram ambos os tipos, enquanto meio de pagamento filtra apenas cobranças e mantém reembolsos na lista. Os totais `gross_expense_amount`, `reimbursement_amount` e `net_expense_amount` abrangem todos os itens filtrados, não apenas a página atual.
 
 `GET /expenses/summary` devolve bruto, reembolso e líquido por mês e categoria. O bruto considera vencimentos de parcelas; o reembolso considera a data em que o dinheiro entrou. `total_amount_due` e `amount_due` mantêm compatibilidade como aliases do líquido. Se filtrar por meio de pagamento, o resumo não subtrai reembolsos, pois entradas ainda não têm meio de recebimento.
+
+## Autenticação
+
+Implementada em 22/10/2026. A migração Alembic `20261022_0007` cria `users`, `local_credentials`, `external_identities` e `refresh_sessions`. E-mail, nome e identificador Google são cifrados com AES-256-GCM; índices HMAC separados permitem localizar identidades sem manter os valores em claro; senhas usam Argon2id. JWT RS256 de acesso expira em 15 minutos. Refresh tokens opacos são rotacionados e enviados em cookie `HttpOnly`, `SameSite=Lax`; o frontend guarda o access token somente em memória e tenta renovar a sessão ao receber 401.
+
+Todas as rotas de negócio exigem Bearer válido. Nesta primeira fase, as contas compartilham despesas, entradas, categorias e meios de pagamento. O frontend oferece `/entrar` e `/cadastro`. O fluxo Google usa Authorization Code com `state`, `nonce` e PKCE e só fica disponível depois de configurar as credenciais OAuth no backend. As chaves de criptografia e JWT precisam ser criadas e mantidas fora do Git; veja `backend/README.md`. A migração `20261022_0007` foi aplicada ao PostgreSQL local.
 
 ## Execução local
 

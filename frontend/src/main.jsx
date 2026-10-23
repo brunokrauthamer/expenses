@@ -2,6 +2,8 @@ import React, { Suspense, lazy, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AppLink, navigate, useLocation } from './shared/router.jsx';
 import Icon from './components/ui/Icon.jsx';
+import AuthPage from './pages/AuthPage.jsx';
+import { AuthProvider, useAuth } from './shared/AuthContext.jsx';
 import './styles.css';
 import './viewport.css';
 
@@ -9,7 +11,7 @@ const ExpensesPage = lazy(() => import('./pages/ExpensesPage.jsx'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage.jsx'));
 const ExpenseHistoryPage = lazy(() => import('./pages/ExpenseHistoryPage.jsx'));
 
-function Header({ activeRoute }) {
+function Header({ activeRoute, user, onSignOut }) {
   return (
     <header className="topbar">
       <AppLink className="brand" to="/despesas" aria-label="Expenses, cadastro de despesas">
@@ -27,7 +29,10 @@ function Header({ activeRoute }) {
           <Icon name="entry" /> Gastos do mês
         </AppLink>
       </nav>
-      <span className="topbar-note"><span className="status-dot" /> Seu espaço financeiro</span>
+      <div className="account-actions">
+        <span className="topbar-note"><span className="status-dot" /> {user?.name || user?.email}</span>
+        <button className="text-button signout-button" type="button" onClick={onSignOut}>Sair</button>
+      </div>
     </header>
   );
 }
@@ -43,12 +48,30 @@ function Footer() {
 
 function App() {
   const location = useLocation();
+  const { user, status, signOut } = useAuth();
   const pathname = location.split('?')[0];
   const activeRoute = pathname === '/' ? '/despesas' : pathname;
+  const isAuthRoute = pathname === '/entrar' || pathname === '/cadastro';
+  const isCompletionRoute = pathname === '/auth/complete';
 
   useEffect(() => {
-    if (pathname === '/') navigate('/despesas', { replace: true });
-  }, [pathname]);
+    if (status === 'loading') return;
+    if (isAuthRoute && status === 'authenticated') navigate('/despesas', { replace: true });
+    else if (isCompletionRoute) navigate(status === 'authenticated' ? '/despesas' : '/entrar', { replace: true });
+    else if (!isAuthRoute && status === 'anonymous' && pathname !== '/') {
+      navigate(`/entrar?next=${encodeURIComponent(location)}`, { replace: true });
+    } else if (pathname === '/') navigate(status === 'authenticated' ? '/despesas' : '/entrar', { replace: true });
+  }, [pathname, location, status, isAuthRoute, isCompletionRoute]);
+
+  if (status === 'loading' || isCompletionRoute) {
+    return <div className="auth-loading" role="status">Verificando sua sessão…</div>;
+  }
+
+  if (isAuthRoute) {
+    return <div className="page-shell auth-shell"><main className="app-content"><AuthPage mode={pathname === '/cadastro' ? 'register' : 'login'} /></main><Footer /></div>;
+  }
+
+  if (status !== 'authenticated') return <div className="auth-loading" role="status">Redirecionando para o login…</div>;
 
   let page;
   if (activeRoute === '/despesas') page = <ExpensesPage />;
@@ -64,7 +87,7 @@ function App() {
 
   return (
     <div className="page-shell">
-      <Header activeRoute={activeRoute} />
+      <Header activeRoute={activeRoute} user={user} onSignOut={signOut} />
       <main className="app-content" id="conteudo">
         <Suspense fallback={<div className="route-loading" role="status">Abrindo sua página…</div>}>
           <div className="route-view">{page}</div>
@@ -76,5 +99,5 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(
-  <React.StrictMode><App /></React.StrictMode>,
+  <React.StrictMode><AuthProvider><App /></AuthProvider></React.StrictMode>,
 );

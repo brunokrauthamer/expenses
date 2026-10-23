@@ -11,23 +11,50 @@ O projeto é um monólito modular. Cada domínio fica em `app/modules/` e separa
 - `service.py`: regras e consultas do domínio;
 - `controller.py`: rotas HTTP do domínio.
 
-Os módulos existentes são `categories`, `expenses` e `payment_methods`. Código compartilhado fica em `app/shared/`; conexão e configuração ficam na raiz de `app/`.
+Os módulos existentes incluem `auth`, `categories`, `expenses`, `income_entries` e `payment_methods`. Código compartilhado fica em `app/shared/`; conexão e configuração ficam na raiz de `app/`.
 
 ## Configuração
 
 1. Crie um banco PostgreSQL.
-2. Copie `.env.example` para `.env` e ajuste `DATABASE_URL`.
+2. Copie `.env.example` para `.env`, ajuste `DATABASE_URL` e configure as chaves de autenticação descritas abaixo.
 3. Crie e ative um ambiente virtual Python.
 4. Instale as dependências: `pip install -r requirements.txt`.
 5. Aplique as migrações: `alembic upgrade head`.
 
-As migrações criam `categories`, `payment_methods`, `expenses` e `expense_installments`. Para inserir as categorias e os meios de pagamento iniciais, execute a partir de `backend`:
+As migrações criam as tabelas de negócio e, na revisão `20261022_0007`, as tabelas de usuários, credenciais, identidades externas e sessões. Para inserir as categorias e os meios de pagamento iniciais, execute a partir de `backend`:
 
 ```powershell
 python -m app.seed
 ```
 
 O seeder pode ser executado novamente; ele insere apenas os nomes ausentes.
+
+## Autenticação e chaves
+
+Todas as rotas de negócio exigem `Authorization: Bearer <access_token>`. Contas podem ser criadas por e-mail e senha; senha tem no mínimo 12 caracteres e é armazenada como hash Argon2id. Access tokens JWT RS256 duram 15 minutos. O refresh token rotativo é enviado somente em cookie `HttpOnly`, `SameSite=Lax`; em produção, defina `AUTH_COOKIE_SECURE=true` e use HTTPS. O cookie usa `AUTH_COOKIE_PATH=/api/auth`, que corresponde ao proxy `/api` do Vite. Ajuste o caminho se a API pública usar outro prefixo.
+
+Gere valores diferentes para `AUTH_ENCRYPTION_KEY`, `AUTH_LOOKUP_KEY` e `AUTH_TOKEN_SECRET`, com o comando abaixo três vezes no PowerShell, e copie cada saída para o `.env`:
+
+```powershell
+[Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+`AUTH_ENCRYPTION_KEY` cifra e-mails, nomes e identificadores Google com AES-256-GCM. `AUTH_LOOKUP_KEY` cria índices HMAC para busca/identificação e hash de refresh tokens. `AUTH_TOKEN_SECRET` assina o cookie temporário do fluxo OAuth. A chave de dados tem versão (`AUTH_ENCRYPTION_KEY_VERSION`); para iniciar uma rotação, configure `AUTH_ENCRYPTION_KEY_V2` com uma nova chave e altere a versão para `2`. Os dados existentes mantêm o prefixo da versão anterior e continuam legíveis enquanto a chave antiga estiver disponível. Guarde todas as chaves fora do banco e dos arquivos versionados; perder uma chave de criptografia torna os campos pessoais correspondentes irrecuperáveis.
+
+Gere um par RSA para assinar JWTs e codifique os arquivos PEM em Base64:
+
+```powershell
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out jwt-private.pem
+openssl pkey -in jwt-private.pem -pubout -out jwt-public.pem
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('jwt-private.pem'))
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('jwt-public.pem'))
+```
+
+Copie as duas saídas para `AUTH_JWT_PRIVATE_KEY_B64` e `AUTH_JWT_PUBLIC_KEY_B64`. A chave privada deve ficar somente no backend. Não a coloque em `VITE_` nem no repositório.
+
+O botão Google fica habilitado pela rota `/auth/google/start` quando `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI` estiverem configurados. No desenvolvimento com Vite, registre `http://localhost:5173/api/auth/google/callback` como URL de redirecionamento autorizada no Google Cloud Console. O callback usa Authorization Code, `state`, `nonce` e PKCE e valida a assinatura/claims do ID token.
+
+As contas podem ver, cadastrar, editar e excluir os mesmos gastos e entradas nesta versão. As tabelas de negócio ainda não têm `user_id`.
 
 ## Importar gastos de planilhas
 

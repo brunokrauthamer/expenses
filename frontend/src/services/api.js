@@ -1,4 +1,14 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || '/api').replace(/\/+$/, '');
+let accessToken = null;
+let refreshRequest = null;
+
+export function setAccessToken(token) {
+  accessToken = token;
+}
+
+export function clearAccessToken() {
+  accessToken = null;
+}
 
 export class ApiError extends Error {
   constructor(message, status) {
@@ -8,7 +18,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, { signal, method = 'GET', body } = {}) {
+async function request(path, { signal, method = 'GET', body, skipAuth = false, retryAuth = true } = {}) {
   let response;
   let responseText;
   let didTimeOut = false;
@@ -22,10 +32,13 @@ async function request(path, { signal, method = 'GET', body } = {}) {
   else signal?.addEventListener('abort', abortRequest, { once: true });
 
   try {
+    const headers = body === undefined ? {} : { 'Content-Type': 'application/json' };
+    if (!skipAuth && accessToken) headers.Authorization = `Bearer ${accessToken}`;
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       signal: controller.signal,
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (response.status !== 204) responseText = await response.text();
@@ -54,6 +67,16 @@ async function request(path, { signal, method = 'GET', body } = {}) {
     responseBody = undefined;
   }
 
+  if (response.status === 401 && !skipAuth && retryAuth && path !== '/auth/refresh') {
+    try {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) return request(path, { signal, method, body, retryAuth: false });
+    } catch {
+      clearAccessToken();
+      window.dispatchEvent(new Event('auth:expired'));
+    }
+  }
+
   if (!response.ok) {
     const detail = responseBody?.detail;
     const message = Array.isArray(detail)
@@ -64,7 +87,25 @@ async function request(path, { signal, method = 'GET', body } = {}) {
   return responseBody;
 }
 
+async function refreshAccessToken() {
+  if (!refreshRequest) {
+    refreshRequest = request('/auth/refresh', { method: 'POST', skipAuth: true, retryAuth: false })
+      .then((result) => {
+        setAccessToken(result.access_token);
+        return result;
+      })
+      .finally(() => { refreshRequest = null; });
+  }
+  return refreshRequest;
+}
+
 export const api = {
+  register: (credentials) => request('/auth/register', { method: 'POST', body: credentials, skipAuth: true, retryAuth: false }),
+  login: (credentials) => request('/auth/login', { method: 'POST', body: credentials, skipAuth: true, retryAuth: false }),
+  refreshSession: () => refreshAccessToken(),
+  logout: () => request('/auth/logout', { method: 'POST', skipAuth: true, retryAuth: false }),
+  googleLoginEnabled: () => request('/auth/google/status', { skipAuth: true, retryAuth: false }),
+  startGoogleLogin: () => { window.location.assign(`${API_BASE_URL}/auth/google/start`); },
   getCategories: (signal) => request('/categories', { signal }),
   getPaymentMethods: (signal) => request('/payment-methods', { signal }),
   getIncomeCategories: (signal) => request('/income-categories', { signal }),

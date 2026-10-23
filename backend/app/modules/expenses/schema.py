@@ -80,6 +80,7 @@ class ExpenseResponse(BaseModel):
 
 
 class ExpenseMonthlyPaymentResponse(ExpenseResponse):
+    due_date: date
     installment_number: int
     installment_amount: Decimal
 

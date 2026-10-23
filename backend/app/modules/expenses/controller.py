@@ -129,6 +129,7 @@ def get_expenses_paid_in_month(
             category_id=expense.category_id,
             payment_method_id=expense.payment_method_id,
             created_at=expense.created_at,
+            due_date=installment.due_date,
             installment_number=installment.installment_number,
             installment_amount=installment.amount,
         )

@@ -318,7 +318,7 @@ export const IncomeForm = memo(function IncomeForm({ categories, incomeCategorie
   </form>;
 });
 
-export function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, refetch, onEdit, title = 'Pagamentos do mês', description = 'Cobranças com vencimento neste mês.', emptyTitle = 'Tudo começa com um registro.', emptyDescription = <>Adicione sua primeira despesa<br />e ela aparece aqui.</>, countLabel = 'compras visíveis', totalLabel = 'Total de pagamentos do mês' }) {
+export function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, refetch, onEdit, title = 'Pagamentos do mês', description = 'Cada parcela aparece no mês do vencimento, pelo valor daquela parcela.', emptyTitle = 'Tudo começa com um registro.', emptyDescription = <>Adicione sua primeira despesa<br />e ela aparece aqui.</>, countLabel = 'pagamentos no mês', totalLabel = 'Total de pagamentos do mês' }) {
   const [deletingId, setDeletingId] = useState(null);
   const [expenseToDelete, setExpenseToDelete] = useState(null);
   const [deleteError, setDeleteError] = useState('');
@@ -467,7 +467,14 @@ export default function ExpensesPage() {
   const [editingEntry, setEditingEntry] = useState(null);
   const [entryMode, setEntryMode] = useState(false);
   const [activeSection, setActiveSection] = useState('form');
-  const fetchRecentExpenses = useCallback(({ signal }) => api.getRecentExpenses(CURRENT_MONTH, signal), []);
+  const fetchRecentExpenses = useCallback(async ({ signal }) => {
+    const expenses = await api.getRecentExpenses(CURRENT_MONTH, signal);
+    return [...expenses].sort((left, right) =>
+      right.expense_date.localeCompare(left.expense_date)
+      || right.id - left.id
+      || left.installment_number - right.installment_number
+    );
+  }, []);
   const { categoriesQuery, paymentMethodsQuery, categories, paymentMethods } = useExpenseLookups();
   const incomeCategoriesQuery = useApiQuery(['income-categories'], ({ signal }) => api.getIncomeCategories(signal));
   const incomeCategories = incomeCategoriesQuery.data ?? [];
