@@ -389,9 +389,13 @@ button:focus-visible, a:focus-visible, summary:focus-visible, input:focus-visibl
 .auth-form .submit-button { min-height: 47px; margin-top: 3px; }
 .auth-divider { display: flex; align-items: center; gap: 13px; margin: 21px 0; color: #989eaf; font-size: 11px; }
 .auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: var(--line); content: ""; }
-.google-button { display: flex; width: 100%; min-height: 46px; align-items: center; justify-content: center; gap: 10px; border: 1px solid #dedfea; border-radius: 9px; background: #fff; color: #343a4e; cursor: pointer; font-size: 12px; font-weight: 600; transition: background .16s ease, border-color .16s ease; }
-.google-button:hover { border-color: #c5c7d4; background: #fafaff; }
-.google-g { color: #4b5568; font-size: 16px; font-weight: 800; }
+.google-button { display: flex; width: 100%; min-height: 46px; align-items: center; justify-content: center; gap: 10px; border: 1px solid #747775; border-radius: 9px; background: #fff; color: #1f1f1f; cursor: pointer; font-size: 14px; font-weight: 600; transition: background .16s ease, border-color .16s ease; }
+.google-button:hover:not(:disabled) { border-color: #5f6368; background: #f7f8f8; }
+.google-button:disabled { cursor: not-allowed; opacity: .72; }
+.google-logo { width: 20px; height: 20px; flex: none; }
+.auth-fallback { display: block; margin: 16px auto 0; }
+.completion-message { gap: 8px; text-align: center; }
+.completion-message p { margin: 0; }
 .auth-switch { margin: 22px 0 0; color: var(--muted); font-size: 12px; text-align: center; }
 .auth-switch a { color: var(--accent-dark); font-weight: 700; text-decoration: none; }
 .auth-switch a:hover { text-decoration: underline; text-underline-offset: 3px; }

@@ -5,7 +5,7 @@ $frontendDir = Join-Path $projectRoot 'frontend'
 $python = Join-Path $backendDir '.venv\Scripts\python.exe'
 $viteScript = Join-Path $frontendDir 'node_modules\vite\bin\vite.js'
 $backendUrl = 'http://127.0.0.1:8000'
-$frontendUrl = 'http://127.0.0.1:5173'
+$frontendUrl = 'http://localhost:5173'
 
 function Test-HttpReady([string] $url) {
     try {
@@ -73,7 +73,7 @@ try {
         throw 'Node.js nao foi encontrado no PATH nem nos locais usuais. Instale Node.js 20.19+ ou 22.12+ e tente novamente.'
     }
 
-    Start-LocalServer 'Backend' $python @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000') $backendDir 8000 "$backendUrl/openapi.json" 'uvicorn'
+    Start-LocalServer 'Backend' $python @('-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000', '--reload', '--reload-dir', 'app', '--no-access-log') $backendDir 8000 "$backendUrl/openapi.json" 'uvicorn'
     Start-LocalServer 'Frontend' $node @('node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '5173') $frontendDir 5173 $frontendUrl 'vite'
 
     Write-Host ''

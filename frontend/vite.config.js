@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
   };
 
   return {
-    server: { proxy: apiProxy },
+    server: { host: '127.0.0.1', port: 5173, strictPort: true, proxy: apiProxy },
     preview: { proxy: apiProxy },
   };
 });
