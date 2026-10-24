@@ -30,16 +30,8 @@ export function AuthProvider({ children }) {
     return () => { active = false; window.removeEventListener('auth:expired', expire); };
   }, []);
 
-  const signIn = useCallback(async (credentials) => {
-    const session = await api.login(credentials);
-    setAccessToken(session.access_token);
-    setUser(session.user);
-    setStatus('authenticated');
-    return session.user;
-  }, []);
-
-  const signUp = useCallback(async (credentials) => {
-    const session = await api.register(credentials);
+  const completeGoogleSignIn = useCallback(async () => {
+    const session = await api.refreshSession();
     setAccessToken(session.access_token);
     setUser(session.user);
     setStatus('authenticated');
@@ -54,7 +46,7 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const value = useMemo(() => ({ user, status, signIn, signUp, signOut }), [user, status, signIn, signUp, signOut]);
+  const value = useMemo(() => ({ user, status, completeGoogleSignIn, signOut }), [user, status, completeGoogleSignIn, signOut]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

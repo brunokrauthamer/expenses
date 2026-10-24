@@ -31,7 +31,7 @@ O seeder pode ser executado novamente; ele insere apenas os nomes ausentes.
 
 ## Autenticação e chaves
 
-Todas as rotas de negócio exigem `Authorization: Bearer <access_token>`. Contas podem ser criadas por e-mail e senha; senha tem no mínimo 12 caracteres e é armazenada como hash Argon2id. Access tokens JWT RS256 duram 15 minutos. O refresh token rotativo é enviado somente em cookie `HttpOnly`, `SameSite=Lax`; em produção, defina `AUTH_COOKIE_SECURE=true` e use HTTPS. O cookie usa `AUTH_COOKIE_PATH=/api/auth`, que corresponde ao proxy `/api` do Vite. Ajuste o caminho se a API pública usar outro prefixo.
+Todas as rotas de negócio exigem `Authorization: Bearer <access_token>`. O login é feito exclusivamente com uma conta Google; na primeira autenticação válida, o backend cria o usuário e a identidade Google. O `sub` do Google é a identidade estável e os tokens do Google são descartados após o login. Access tokens JWT RS256 duram 15 minutos. O refresh token rotativo é enviado somente em cookie `HttpOnly`, `SameSite=Lax`; em produção, defina `AUTH_COOKIE_SECURE=true` e use HTTPS. O cookie usa `AUTH_COOKIE_PATH=/api/auth`, que corresponde ao proxy `/api` do Vite. Ajuste o caminho se a API pública usar outro prefixo.
 
 Gere valores diferentes para `AUTH_ENCRYPTION_KEY`, `AUTH_LOOKUP_KEY` e `AUTH_TOKEN_SECRET`, com o comando abaixo três vezes no PowerShell, e copie cada saída para o `.env`:
 
@@ -52,7 +52,13 @@ openssl pkey -in jwt-private.pem -pubout -out jwt-public.pem
 
 Copie as duas saídas para `AUTH_JWT_PRIVATE_KEY_B64` e `AUTH_JWT_PUBLIC_KEY_B64`. A chave privada deve ficar somente no backend. Não a coloque em `VITE_` nem no repositório.
 
-O botão Google fica habilitado pela rota `/auth/google/start` quando `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI` estiverem configurados. No desenvolvimento com Vite, registre `http://localhost:5173/api/auth/google/callback` como URL de redirecionamento autorizada no Google Cloud Console. O callback usa Authorization Code, `state`, `nonce` e PKCE e valida a assinatura/claims do ID token.
+O botão Google depende de `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI`; sem eles, a página informa que o login precisa ser configurado. Crie um cliente OAuth do tipo aplicação web no Google Cloud Console, configure a tela de consentimento e adicione `http://localhost:5173/api/auth/google/callback` como URI de redirecionamento autorizada. Os valores ficam no `backend/.env` (nunca no frontend); `AUTH_FRONTEND_URL` deve apontar para `http://localhost:5173`. Inicie o frontend por `http://localhost:5173` para que callback, popup e cookie compartilhem a origem correta.
+
+O botão abre o fluxo Authorization Code com PKCE em um popup. `state`, `nonce` e o destino interno permanecem protegidos em cookie `HttpOnly` temporário; a aplicação valida assinatura e claims do ID token no backend. A janela do Google comunica apenas o resultado e um identificador aleatório à tela de login; o frontend recupera a sessão pelo endpoint de refresh. O token nunca passa pela mensagem entre janelas. Caso o navegador bloqueie o popup, a interface oferece continuar na mesma aba.
+
+O `iniciar.ps1` usa recarga automática dos arquivos de `app` no desenvolvimento e desativa o log de acesso do Uvicorn para não registrar códigos OAuth e `state` nas URLs do callback. Falhas de autenticação continuam registradas com etapa, motivo controlado e identificador da tentativa, sem credenciais ou dados pessoais. Alterações no `.env` exigem encerrar e iniciar novamente o backend; executar o inicializador enquanto a API já responde reutiliza o processo existente.
+
+Usuários criados anteriormente por e-mail/senha e as sessões ainda válidas são preservados, junto com todos os dados financeiros. Os endpoints de senha foram removidos. O vínculo com uma conta local existente por e-mail só ocorre quando o Google é autoridade sobre aquele domínio (Gmail ou Workspace com domínio hospedado verificado); coincidências de e-mail externo precisam de associação assistida. Categorias, despesas e entradas continuam compartilhadas entre usuários autenticados.
 
 As contas podem ver, cadastrar, editar e excluir os mesmos gastos e entradas nesta versão. As tabelas de negócio ainda não têm `user_id`.
 

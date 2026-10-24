@@ -36,6 +36,7 @@ from sqlalchemy.pool import StaticPool
 import app.modules.registry  # noqa: F401
 from app.database import Base
 from app.main import app
+from app.modules.auth.service import google_login
 from app.shared.dependencies import get_db
 from app.shared.auth import get_current_user
 from app.modules.auth.model import User
@@ -92,3 +93,23 @@ def auth_client(database: Session) -> TestClient:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def google_session(database: Session):
+    def create(client: TestClient, email: str = "pessoa@gmail.com", subject: str | None = None):
+        account = google_login(
+            database,
+            subject or f"google-subject-{email}",
+            email,
+            "Pessoa de Teste",
+        )
+        user, access_token, refresh_token, expires_in = account
+        client.cookies.set("expenses_refresh", refresh_token, path="/auth")
+        return {
+            "access_token": access_token,
+            "expires_in": expires_in,
+            "user": {"id": str(user.id), "email": email, "name": "Pessoa de Teste"},
+        }
+
+    return create

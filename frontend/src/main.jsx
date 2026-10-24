@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { AppLink, navigate, useLocation } from './shared/router.jsx';
 import Icon from './components/ui/Icon.jsx';
 import AuthPage from './pages/AuthPage.jsx';
+import GoogleAuthComplete from './pages/GoogleAuthComplete.jsx';
 import { AuthProvider, useAuth } from './shared/AuthContext.jsx';
 import './styles.css';
 import './viewport.css';
@@ -52,23 +53,23 @@ function App() {
   const pathname = location.split('?')[0];
   const activeRoute = pathname === '/' ? '/despesas' : pathname;
   const isAuthRoute = pathname === '/entrar' || pathname === '/cadastro';
-  const isCompletionRoute = pathname === '/auth/complete';
+  const isRegisterRoute = pathname === '/cadastro';
 
   useEffect(() => {
     if (status === 'loading') return;
     if (isAuthRoute && status === 'authenticated') navigate('/despesas', { replace: true });
-    else if (isCompletionRoute) navigate(status === 'authenticated' ? '/despesas' : '/entrar', { replace: true });
+    else if (isRegisterRoute) navigate(`/entrar${location.includes('?') ? location.slice(location.indexOf('?')) : ''}`, { replace: true });
     else if (!isAuthRoute && status === 'anonymous' && pathname !== '/') {
       navigate(`/entrar?next=${encodeURIComponent(location)}`, { replace: true });
     } else if (pathname === '/') navigate(status === 'authenticated' ? '/despesas' : '/entrar', { replace: true });
-  }, [pathname, location, status, isAuthRoute, isCompletionRoute]);
+  }, [pathname, location, status, isAuthRoute, isRegisterRoute]);
 
-  if (status === 'loading' || isCompletionRoute) {
+  if (status === 'loading') {
     return <div className="auth-loading" role="status">Verificando sua sessão…</div>;
   }
 
   if (isAuthRoute) {
-    return <div className="page-shell auth-shell"><main className="app-content"><AuthPage mode={pathname === '/cadastro' ? 'register' : 'login'} /></main><Footer /></div>;
+    return <div className="page-shell auth-shell"><main className="app-content"><AuthPage /></main><Footer /></div>;
   }
 
   if (status !== 'authenticated') return <div className="auth-loading" role="status">Redirecionando para o login…</div>;
@@ -98,6 +99,10 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(
-  <React.StrictMode><AuthProvider><App /></AuthProvider></React.StrictMode>,
-);
+function Root() {
+  const location = useLocation();
+  if (location.split('?')[0] === '/auth/complete') return <GoogleAuthComplete />;
+  return <AuthProvider><App /></AuthProvider>;
+}
+
+createRoot(document.getElementById('root')).render(<React.StrictMode><Root /></React.StrictMode>);

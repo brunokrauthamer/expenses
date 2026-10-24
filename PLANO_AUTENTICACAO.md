@@ -2,6 +2,8 @@
 
 Atualizado em 22/10/2026. A primeira versão foi implementada no código e a migração `20261022_0007` foi aplicada ao PostgreSQL local. Configure as chaves descritas em `backend/README.md` antes de cadastrar a primeira conta; outras instalações também precisam aplicar essa migração.
 
+> **Este plano foi substituído para o método de entrada.** O Expenses agora aceita novas autenticações somente com Google, em popup, e cria contas automaticamente. O plano de login Google que registra essa implementação e sua configuração está em `PLANO_LOGIN_GOOGLE.md`. O restante deste documento serve como histórico das tabelas, tokens e decisões de autenticação compartilhadas; referências a login/cadastro por senha foram descontinuadas.
+
 ## Objetivo e escopo inicial
 
 - Exigir que toda chamada à API de negócio seja feita por uma pessoa autenticada.

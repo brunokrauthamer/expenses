@@ -5,19 +5,14 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from argon2 import PasswordHasher
-from argon2.exceptions import VerificationError, VerifyMismatchError
+import jwt
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.auth.model import ExternalIdentity, LocalCredential, RefreshSession, User
+from app.modules.auth.model import ExternalIdentity, RefreshSession, User
 from app.shared.auth import create_access_token
 from app.shared.crypto import decrypt_personal_data, encrypt_personal_data, lookup_digest, token_digest
-
-password_hasher = PasswordHasher()
-_DUMMY_PASSWORD_HASH = password_hasher.hash("expenses-invalid-account-check")
-
 
 def user_payload(user: User) -> dict:
     return {
@@ -54,34 +49,6 @@ def _create_session(database: Session, user: User) -> tuple[str, str, int]:
     access_token, expires_in = create_access_token(user.id)
     database.commit()
     return access_token, refresh_token, expires_in
-
-
-def register(database: Session, email: str, password: str) -> tuple[User, str, str, int]:
-    if database.scalar(select(User.id).where(User.email_lookup == lookup_digest(email))) is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="JÃ¡ existe uma conta com este e-mail.")
-    user = _new_user(database, email)
-    database.add(LocalCredential(user_id=user.id, password_hash=password_hasher.hash(password)))
-    access, refresh, expires = _create_session(database, user)
-    return user, access, refresh, expires
-
-
-def login(database: Session, email: str, password: str) -> tuple[User, str, str, int]:
-    user = database.scalar(select(User).where(User.email_lookup == lookup_digest(email)))
-    credential = user.credential if user else None
-    valid = False
-    try:
-        valid = password_hasher.verify(
-            credential.password_hash if credential else _DUMMY_PASSWORD_HASH,
-            password,
-        )
-        if credential and valid and password_hasher.check_needs_rehash(credential.password_hash):
-            credential.password_hash = password_hasher.hash(password)
-    except (VerifyMismatchError, VerificationError):
-        valid = False
-    if not valid or user is None or not user.is_active:
-        raise HTTPException(status_code=401, detail="E-mail ou senha incorretos.", headers={"WWW-Authenticate": "Bearer"})
-    access, refresh, expires = _create_session(database, user)
-    return user, access, refresh, expires
 
 
 def rotate_refresh(database: Session, token: str | None) -> tuple[User, str, str, int]:
@@ -130,7 +97,19 @@ def revoke_refresh(database: Session, token: str | None) -> None:
             database.commit()
 
 
-def google_login(database: Session, subject: str, email: str, name: str | None) -> tuple[User, str, str, int]:
+def google_controls_email(email: str, hosted_domain: str | None) -> bool:
+    domain = email.rpartition("@")[2].casefold()
+    return domain == "gmail.com" or bool(hosted_domain and domain == hosted_domain.casefold())
+
+
+def google_login(
+    database: Session,
+    subject: str,
+    email: str,
+    name: str | None,
+    *,
+    hosted_domain: str | None = None,
+) -> tuple[User, str, str, int]:
     subject_hash = lookup_digest(subject, namespace="google")
     identity = database.scalar(
         select(ExternalIdentity).where(
@@ -143,6 +122,11 @@ def google_login(database: Session, subject: str, email: str, name: str | None) 
     else:
         email_hash = lookup_digest(email)
         user = database.scalar(select(User).where(User.email_lookup == email_hash))
+        if user is not None and not google_controls_email(email, hosted_domain):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Este e-mail já está associado a uma conta. Entre em contato com o suporte para vinculá-la com segurança.",
+            )
         if user is None:
             user = _new_user(database, email, name)
         database.add(
@@ -161,19 +145,31 @@ def google_login(database: Session, subject: str, email: str, name: str | None) 
 
 
 def oauth_state_cookie(payload: dict) -> str:
-    from itsdangerous import URLSafeTimedSerializer
-
-    return URLSafeTimedSerializer(_cookie_secret(), salt="expenses-google-oauth").dumps(payload)
+    now = datetime.now(timezone.utc)
+    claims = {
+        **payload,
+        "iss": "expenses-api",
+        "aud": "expenses-google-oauth-state",
+        "iat": now,
+        "exp": now + timedelta(minutes=10),
+    }
+    key = base64.b64decode(_cookie_secret(), validate=True)
+    return jwt.encode(claims, key, algorithm="HS256")
 
 
 def read_oauth_state_cookie(value: str) -> dict:
-    from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-
     try:
-        result = URLSafeTimedSerializer(_cookie_secret(), salt="expenses-google-oauth").loads(value, max_age=600)
-    except (BadSignature, SignatureExpired) as error:
+        key = base64.b64decode(_cookie_secret(), validate=True)
+        return jwt.decode(
+            value,
+            key,
+            algorithms=["HS256"],
+            audience="expenses-google-oauth-state",
+            issuer="expenses-api",
+            options={"require": ["iat", "exp", "iss", "aud", "state", "nonce", "verifier", "request_id", "mode", "next"]},
+        )
+    except (ValueError, jwt.PyJWTError) as error:
         raise HTTPException(status_code=400, detail="A tentativa de login Google expirou. Tente novamente.") from error
-    return result
 
 
 def _cookie_secret() -> str:

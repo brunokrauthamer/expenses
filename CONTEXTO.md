@@ -2,11 +2,13 @@
 
 Atualizado em 22/10/2026. Este documento resume decisões e o estado observado. Em novos chats, confira o código, o Git e as migrações antes de assumir que nada mudou.
 
+Atualização operacional em 24/10/2026: o usuário confirmou o login Google funcionando após encerrar o backend antigo e iniciar a versão atual com acesso à rede. Client ID, segredo e callback do `.env` conferem com o JSON do Google, sem necessidade de alterar o ambiente. Foram adicionados logs seguros de etapas do callback e três testes de diagnóstico; 51 testes do backend e build do frontend aprovados. O inicializador agora configura recarga de `app` e desativa logs de URLs do Uvicorn; alterações no `.env` exigem reinício. O backend deixado ativo na rodada usa o código atual, sem recarga automática, com logs em `%TEMP%\expenses-google-debug`. Detalhes e limites em `PLANO_DEBUG_LOGIN_GOOGLE.md`.
+
 ## Objetivo e preferências
 
 Aplicação web simples de controle de despesas pessoais. O usuário está desenvolvendo seu primeiro software com ajuda de um agente de programação e prefere explicações claras. Priorizar ferramentas gratuitas, evitar serviços pagos e não acrescentar funcionalidades sem solicitação. Não expor segredos nem executar comandos destrutivos sem autorização. O usuário solicitou execução dos testes disponíveis e correção de erros ao implementar mudanças.
 
-A interface deve ser simples, responsiva e agradável, com aparência de aplicativo financeiro profissional: base clara, tons neutros, destaque para ações, tipografia legível, ícones consistentes e poucos elementos decorativos. A cor verde está proibida. Respeitar a preferência por movimento reduzido. Usar nomes em inglês para tabelas e colunas do banco.
+A interface deve ser simples, responsiva e agradável, com aparência de aplicativo financeiro profissional: base clara, tons neutros, destaque para ações, tipografia legível, ícones consistentes e poucos elementos decorativos. A cor verde está proibida, com exceção das cores oficiais do logotipo do Google no botão de login, autorizada pelo usuário em 22/10/2026. Respeitar a preferência por movimento reduzido. Usar nomes em inglês para tabelas e colunas do banco.
 
 Priorizar componentes e funções reutilizáveis, evitando renderizações e chamadas à API desnecessárias. Preservar as regras financeiras, integrações e dados reais; não apresentar controles sem função como se estivessem implementados. Manter português brasileiro, formatos locais de data e moeda, contraste, foco visível, navegação por teclado e experiência adequada ao celular.
 
@@ -94,7 +96,11 @@ Implementado em 22/10/2026. O módulo `income_entries` usa `income_categories` e
 
 Implementada em 22/10/2026. A migração Alembic `20261022_0007` cria `users`, `local_credentials`, `external_identities` e `refresh_sessions`. E-mail, nome e identificador Google são cifrados com AES-256-GCM; índices HMAC separados permitem localizar identidades sem manter os valores em claro; senhas usam Argon2id. JWT RS256 de acesso expira em 15 minutos. Refresh tokens opacos são rotacionados e enviados em cookie `HttpOnly`, `SameSite=Lax`; o frontend guarda o access token somente em memória e tenta renovar a sessão ao receber 401.
 
-Todas as rotas de negócio exigem Bearer válido. Nesta primeira fase, as contas compartilham despesas, entradas, categorias e meios de pagamento. O frontend oferece `/entrar` e `/cadastro`. O fluxo Google usa Authorization Code com `state`, `nonce` e PKCE e só fica disponível depois de configurar as credenciais OAuth no backend. As chaves de criptografia e JWT precisam ser criadas e mantidas fora do Git; veja `backend/README.md`. A migração `20261022_0007` foi aplicada ao PostgreSQL local.
+Todas as rotas de negócio exigem Bearer válido. Nesta primeira fase, as contas compartilham despesas, entradas, categorias e meios de pagamento. O frontend oferece entrada somente por Google em `/entrar`; `/cadastro` redireciona para essa tela. O primeiro login Google cria a conta. O fluxo usa Authorization Code com `state`, `nonce` e PKCE em popup, e requer credenciais OAuth no backend. As chaves de criptografia e JWT precisam ser criadas e mantidas fora do Git; veja `backend/README.md`. A migração `20261022_0007` foi aplicada ao PostgreSQL local.
+
+Implementado em 22/10/2026 na branch `feat/google-only-login`: entrada exclusiva com Google via popup, criação automática da conta e retorno à rota privada solicitada. O plano detalhado está em `PLANO_LOGIN_GOOGLE.md`. A autenticação Google real requer credenciais OAuth válidas e a URI de callback cadastrada conforme `backend/README.md`. O usuário autorizou as cores oficiais apenas no logotipo do Google.
+
+Para o login Google local, acesse exclusivamente `http://localhost:5173` — não use `http://127.0.0.1:5173`. O callback OAuth, `AUTH_FRONTEND_URL` e os cookies temporários usam `localhost`; trocar o host durante o fluxo impede que o callback receba o cookie de estado e o login falha.
 
 ## Execução local
 
