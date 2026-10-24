@@ -6,13 +6,14 @@ import SectionHeading from '../components/ui/SectionHeading.jsx';
 import SectionSwitcher from '../components/ui/SectionSwitcher.jsx';
 import Icon from '../components/ui/Icon.jsx';
 import CategoryIcon from '../components/ui/CategoryIcon.jsx';
+import { AppLink } from '../shared/router.jsx';
 import { categoryColor } from '../components/charts/CategoryChart.jsx';
 import { formatAmountInput, formatDate, formatMoney, todayISO } from '../shared/format.js';
 import { getQueryErrorMessage, invalidateCachedQueries, useApiQuery } from '../shared/queryCache.js';
 import { useExpenseLookups } from '../shared/useExpenseLookups.js';
+import { useAuth } from '../shared/AuthContext.jsx';
 
 const CURRENT_MONTH = new Date().toLocaleDateString('sv-SE').slice(0, 7);
-const RECENT_QUERY_KEY = ['expenses', 'recent', { month: CURRENT_MONTH }];
 
 function newForm() {
   return {
@@ -62,7 +63,7 @@ function sumInstallmentAmounts(expenses = []) {
   return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
 }
 
-export const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethods, expenseToEdit, onCancelEdit, onSaved }) {
+export const ExpenseForm = memo(function ExpenseForm({ userId, categories, categoryReferences = categories, paymentMethods, paymentMethodReferences = paymentMethods, expenseToEdit, onCancelEdit, onSaved }) {
   const [form, setForm] = useState(() => expenseToEdit ? formFromExpense(expenseToEdit) : newForm());
   const [error, setError] = useState('');
   const [errorField, setErrorField] = useState('');
@@ -70,6 +71,8 @@ export const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethod
   const [isSaving, setIsSaving] = useState(false);
   const [keepFields, setKeepFields] = useState(false);
   const descriptionRef = useRef(null);
+  const categoryOptions = [...categories, ...categoryReferences.filter((item) => item.deleted_at && item.id === expenseToEdit?.category_id)];
+  const paymentMethodOptions = [...paymentMethods, ...paymentMethodReferences.filter((item) => item.deleted_at && item.id === expenseToEdit?.payment_method_id)];
 
   useEffect(() => {
     if (expenseToEdit) descriptionRef.current?.focus({ preventScroll: true });
@@ -147,7 +150,7 @@ export const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethod
       const saved = expenseToEdit
         ? await api.updateExpense(expenseToEdit.id, payload)
         : await api.createExpense(payload);
-      invalidateCachedQueries(['expenses']);
+      invalidateCachedQueries([userId, 'expenses']);
       if (expenseToEdit) {
         setForm(formFromExpense(saved));
       } else {
@@ -206,7 +209,7 @@ export const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethod
           <span>Categoria</span>
           <select name="categoryId" value={form.categoryId} onChange={updateField} aria-invalid={errorField === "categoryId"} aria-describedby={errorField === "categoryId" ? "category-error" : undefined} required>
             <option value="" disabled>Selecione</option>
-            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            {categoryOptions.map((category) => <option key={category.id} value={category.id}>{category.name}{category.deleted_at ? ' (excluída)' : ''}</option>)}
           </select>
           {errorField === "categoryId" && <span className="field-error" id="category-error" role="alert">{error}</span>}
         </label>
@@ -215,7 +218,7 @@ export const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethod
           <span>Meio de pagamento</span>
           <select name="paymentMethodId" value={form.paymentMethodId} onChange={updateField} aria-invalid={errorField === "paymentMethodId"} aria-describedby={errorField === "paymentMethodId" ? "payment-method-error" : undefined} required>
             <option value="" disabled>Selecione</option>
-            {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
+            {paymentMethodOptions.map((method) => <option key={method.id} value={method.id}>{method.name}{method.deleted_at ? ' (excluído)' : ''}</option>)}
           </select>
           {errorField === "paymentMethodId" && <span className="field-error" id="payment-method-error" role="alert">{error}</span>}
         </label>
@@ -272,7 +275,7 @@ export const ExpenseForm = memo(function ExpenseForm({ categories, paymentMethod
   );
 });
 
-export const IncomeForm = memo(function IncomeForm({ categories, incomeCategories, entryToEdit, onSaved, onCancel }) {
+export const IncomeForm = memo(function IncomeForm({ categories, categoryReferences = categories, incomeCategories, incomeCategoryReferences = incomeCategories, entryToEdit, onSaved, onCancel }) {
   const [description, setDescription] = useState(entryToEdit?.description ?? '');
   const [amount, setAmount] = useState(entryToEdit ? formatAmountInput(String(entryToEdit.amount).replace(/\D/g, '')) : '');
   const [receivedDate, setReceivedDate] = useState(entryToEdit?.received_date ?? todayISO());
@@ -280,7 +283,9 @@ export const IncomeForm = memo(function IncomeForm({ categories, incomeCategorie
   const [expenseCategoryId, setExpenseCategoryId] = useState(entryToEdit?.expense_category_id ? String(entryToEdit.expense_category_id) : '');
   const [message, setMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const selectedCategory = incomeCategories.find((category) => String(category.id) === incomeCategoryId);
+  const categoryOptions = [...categories, ...categoryReferences.filter((item) => item.deleted_at && item.id === entryToEdit?.expense_category_id)];
+  const incomeCategoryOptions = [...incomeCategories, ...incomeCategoryReferences.filter((item) => item.deleted_at && item.id === entryToEdit?.income_category_id)];
+  const selectedCategory = incomeCategoryOptions.find((category) => String(category.id) === incomeCategoryId);
 
   async function submit(event) {
     event.preventDefault();
@@ -310,15 +315,16 @@ export const IncomeForm = memo(function IncomeForm({ categories, incomeCategorie
         <label className="field"><span>Valor recebido</span><div className="input-with-prefix"><span>R$</span><input inputMode="numeric" value={amount} onChange={(event) => setAmount(formatAmountInput(event.target.value))} placeholder="0,00" required /></div></label>
         <label className="field"><span>Data do recebimento</span><input type="date" value={receivedDate} onChange={(event) => setReceivedDate(event.target.value)} required /></label>
       </div>
-      <label className="field"><span>Categoria da entrada</span><select value={incomeCategoryId} onChange={(event) => { setIncomeCategoryId(event.target.value); setExpenseCategoryId(''); }} required><option value="" disabled>Selecione</option>{incomeCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
-      {selectedCategory?.requires_expense_category && <label className="field"><span>Categoria do gasto reembolsado</span><select value={expenseCategoryId} onChange={(event) => setExpenseCategoryId(event.target.value)} required><option value="" disabled>Selecione</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>}
+      <label className="field"><span>Categoria da entrada</span><select value={incomeCategoryId} onChange={(event) => { setIncomeCategoryId(event.target.value); setExpenseCategoryId(''); }} required><option value="" disabled>Selecione</option>{incomeCategoryOptions.map((category) => <option key={category.id} value={category.id}>{category.name}{category.deleted_at ? ' (excluída)' : ''}</option>)}</select></label>
+      {!incomeCategoryOptions.length && <p className="form-message error-message">Você não tem categorias de entrada ativas. <AppLink className="text-link" to="/configuracoes">Adicione uma em Configurações</AppLink>.</p>}
+      {selectedCategory?.requires_expense_category && <label className="field"><span>Categoria do gasto reembolsado</span><select value={expenseCategoryId} onChange={(event) => setExpenseCategoryId(event.target.value)} required><option value="" disabled>Selecione</option>{categoryOptions.map((category) => <option key={category.id} value={category.id}>{category.name}{category.deleted_at ? ' (excluída)' : ''}</option>)}</select></label>}
     </div>
     {message && <p className="form-message" role="status">{message}</p>}
     <button className="submit-button" type="submit" disabled={isSaving || !incomeCategories.length}><span>{isSaving ? 'Salvando…' : entryToEdit ? 'Salvar alterações' : 'Adicionar entrada'}</span><Icon name="entry" /></button>
   </form>;
 });
 
-export function ExpenseList({ expenses, categories, paymentMethods, isLoading, error, refetch, onEdit, title = 'Pagamentos do mês', description = 'Cada parcela aparece no mês do vencimento, pelo valor daquela parcela.', emptyTitle = 'Tudo começa com um registro.', emptyDescription = <>Adicione sua primeira despesa<br />e ela aparece aqui.</>, countLabel = 'pagamentos no mês', totalLabel = 'Total de pagamentos do mês' }) {
+export function ExpenseList({ userId, expenses, categories, paymentMethods, isLoading, error, refetch, onEdit, title = 'Pagamentos do mês', description = 'Cada parcela aparece no mês do vencimento, pelo valor daquela parcela.', emptyTitle = 'Tudo começa com um registro.', emptyDescription = <>Adicione sua primeira despesa<br />e ela aparece aqui.</>, countLabel = 'pagamentos no mês', totalLabel = 'Total de pagamentos do mês' }) {
   const [deletingId, setDeletingId] = useState(null);
   const [expenseToDelete, setExpenseToDelete] = useState(null);
   const [deleteError, setDeleteError] = useState('');
@@ -352,12 +358,12 @@ export function ExpenseList({ expenses, categories, paymentMethods, isLoading, e
     try {
       if (expense.kind === 'reimbursement') {
         await api.deleteIncomeEntry(expense.id);
-        invalidateCachedQueries(['income-entries']);
-        invalidateCachedQueries(['expenses']);
+        invalidateCachedQueries([userId, 'income-entries']);
+        invalidateCachedQueries([userId, 'expenses']);
         setMessage('Reembolso excluído.');
       } else {
         await api.deleteExpense(expense.id);
-        invalidateCachedQueries(['expenses']);
+        invalidateCachedQueries([userId, 'expenses']);
         setMessage('Despesa excluída.');
       }
       setExpenseToDelete(null);
@@ -368,7 +374,7 @@ export function ExpenseList({ expenses, categories, paymentMethods, isLoading, e
     } finally {
       setDeletingId(null);
     }
-  }, [expenseToDelete]);
+  }, [expenseToDelete, userId]);
 
   return (
     <>
@@ -401,8 +407,12 @@ export function ExpenseList({ expenses, categories, paymentMethods, isLoading, e
         <ul className={`expense-list scroll-region${isLoading ? ' list-updating' : ''}`} tabIndex="0" aria-labelledby="monthly-payments-heading">
           {expenses.map((expense) => {
             const isReimbursement = expense.kind === 'reimbursement';
-            const category = categories.find((item) => item.id === expense.category_id)?.name ?? 'Categoria';
-            const method = paymentMethods.find((item) => item.id === expense.payment_method_id)?.name;
+            const categoryRecord = categories.find((item) => item.id === expense.category_id);
+            const category = expense.category_name ?? categoryRecord?.name ?? 'Categoria';
+            const categoryLabel = `${category}${expense.category_deleted || categoryRecord?.deleted_at ? ' (excluída)' : ''}`;
+            const methodRecord = paymentMethods.find((item) => item.id === expense.payment_method_id);
+            const method = expense.payment_method_name ?? methodRecord?.name;
+            const methodLabel = method ? `${method}${expense.payment_method_deleted || methodRecord?.deleted_at ? ' (excluído)' : ''}` : 'Pagamento';
             const eventDate = expense.event_date ?? expense.due_date ?? expense.expense_date;
             const amount = expense.amount_due ?? expense.installment_amount ?? expense.amount;
             return (
@@ -410,8 +420,8 @@ export function ExpenseList({ expenses, categories, paymentMethods, isLoading, e
                 <span className="expense-symbol" style={{ '--category-color': categoryColor(expense.category_id) }} aria-hidden="true"><CategoryIcon name={category} size={18} /></span>
                 <div className="expense-details">
                   <strong title={expense.description}>{expense.description}</strong>
-                  <span title={isReimbursement ? `Reembolso · ${category}` : `${category} · ${method ?? 'Pagamento'}`}>
-                    {isReimbursement ? <>Reembolso<i>·</i>{category}</> : <>{category}<i>·</i>{method ?? 'Pagamento'}</>}<i>·</i>{formatDate(eventDate)}
+                  <span title={isReimbursement ? `Reembolso · ${categoryLabel}` : `${categoryLabel} · ${methodLabel}`}>
+                    {isReimbursement ? <>Reembolso<i>·</i>{categoryLabel}</> : <>{categoryLabel}<i>·</i>{methodLabel}</>}<i>·</i>{formatDate(eventDate)}
                     {!isReimbursement && expense.installment_count > 1 && <i>Parcela {expense.installment_number} de {expense.installment_count}</i>}
                   </span>
                 </div>
@@ -463,6 +473,8 @@ export function ExpenseList({ expenses, categories, paymentMethods, isLoading, e
 }
 
 export default function ExpensesPage() {
+  const { user } = useAuth();
+  const userId = user?.id;
   const [editingExpense, setEditingExpense] = useState(null);
   const [editingEntry, setEditingEntry] = useState(null);
   const [entryMode, setEntryMode] = useState(false);
@@ -475,24 +487,23 @@ export default function ExpensesPage() {
       || left.installment_number - right.installment_number
     );
   }, []);
-  const { categoriesQuery, paymentMethodsQuery, categories, paymentMethods } = useExpenseLookups();
-  const incomeCategoriesQuery = useApiQuery(['income-categories'], ({ signal }) => api.getIncomeCategories(signal));
-  const incomeCategories = incomeCategoriesQuery.data ?? [];
-  const recentQuery = useApiQuery(RECENT_QUERY_KEY, fetchRecentExpenses);
+  const lookups = useExpenseLookups(userId);
+  const { categoriesQuery, paymentMethodsQuery, categories, paymentMethods, categoryReferences, paymentMethodReferences, incomeCategoriesQuery, incomeCategories, incomeCategoryReferences } = lookups;
+  const recentQuery = useApiQuery([userId, 'expenses', 'month', CURRENT_MONTH], fetchRecentExpenses, { enabled: Boolean(userId) });
   const lookupsAreReady = categories.length > 0 && paymentMethods.length > 0;
   const fetchMonthlyIncome = useCallback(({ signal }) => api.getIncomeEntries({ startMonth: CURRENT_MONTH, endMonth: CURRENT_MONTH }, signal), []);
-  const incomeQuery = useApiQuery(['income-entries', CURRENT_MONTH], fetchMonthlyIncome);
+  const incomeQuery = useApiQuery([userId, 'income-entries', 'month', CURRENT_MONTH], fetchMonthlyIncome, { enabled: Boolean(userId) });
   const refreshIncome = useCallback(() => {
-    invalidateCachedQueries(['income-entries']);
-    invalidateCachedQueries(['expenses']);
+    invalidateCachedQueries([userId, 'income-entries']);
+    invalidateCachedQueries([userId, 'expenses']);
     setEditingEntry(null);
-  }, []);
+  }, [userId]);
   const deleteIncomeEntry = useCallback(async (entry) => {
     if (!window.confirm(`Excluir a entrada “${entry.description}”?`)) return;
     try { await api.deleteIncomeEntry(entry.id); refreshIncome(); }
     catch (error) { window.alert(error.message || 'Não foi possível excluir esta entrada.'); }
   }, [refreshIncome]);
-  const lookupsAreLoading = categoriesQuery.isLoading || paymentMethodsQuery.isLoading;
+  const lookupsAreLoading = categoriesQuery.isLoading || paymentMethodsQuery.isLoading || (entryMode && incomeCategoriesQuery.isLoading);
   const startEditing = useCallback((expense) => {
     setEditingExpense(expense);
     setActiveSection('form');
@@ -522,13 +533,13 @@ export default function ExpensesPage() {
             <p className="query-state" role="status">Carregando categorias e meios de pagamento…</p>
           )}
           {categoriesQuery.data?.length === 0 && !categoriesQuery.isLoading && (
-            <p className="form-message error-message" role="alert">Cadastre uma categoria antes de registrar despesas.</p>
+              <p className="form-message error-message" role="alert">Você não tem categorias ativas. <AppLink className="text-link" to="/configuracoes">Adicione uma em Configurações</AppLink>.</p>
           )}
           {paymentMethodsQuery.data?.length === 0 && !paymentMethodsQuery.isLoading && (
-            <p className="form-message error-message" role="alert">Cadastre um meio de pagamento antes de continuar.</p>
+              <p className="form-message error-message" role="alert">Você não tem meios de pagamento ativos. <AppLink className="text-link" to="/configuracoes">Adicione um em Configurações</AppLink>.</p>
           )}
-          {entryMode && !editingExpense && <IncomeForm key={editingEntry?.id ?? 'new-income'} categories={categories} incomeCategories={incomeCategories} entryToEdit={editingEntry} onSaved={refreshIncome} onCancel={() => setEditingEntry(null)} />}
-          {!entryMode && lookupsAreReady && <ExpenseForm key={editingExpense?.id ?? 'new'} categories={categories} paymentMethods={paymentMethods} expenseToEdit={editingExpense} onCancelEdit={() => setEditingExpense(null)} />}
+          {entryMode && !editingExpense && <IncomeForm key={editingEntry?.id ?? 'new-income'} categories={categories} categoryReferences={categoryReferences} incomeCategories={incomeCategories} incomeCategoryReferences={incomeCategoryReferences} entryToEdit={editingEntry} onSaved={refreshIncome} onCancel={() => setEditingEntry(null)} />}
+          {!entryMode && (lookupsAreReady || editingExpense) && <ExpenseForm key={editingExpense?.id ?? 'new'} userId={userId} categories={categories} categoryReferences={categoryReferences} paymentMethods={paymentMethods} paymentMethodReferences={paymentMethodReferences} expenseToEdit={editingExpense} onCancelEdit={() => setEditingExpense(null)} onSaved={() => setEditingExpense(null)} />}
         </Panel>
 
         <Panel className="list-panel" id="monthly-payments-panel">
@@ -536,18 +547,19 @@ export default function ExpensesPage() {
           <div className="section-heading list-heading"><div className="list-heading-copy"><h2>Entradas deste mês</h2><p>Valores recebidos no mês selecionado.</p></div></div>
           {incomeQuery.error && <p className="form-message error-message" role="alert">Não foi possível carregar as entradas.</p>}
           {incomeQuery.data?.items?.length ? <ul className="expense-list scroll-region" aria-label="Entradas recebidas neste mês">{incomeQuery.data.items.map((entry) => {
-            const incomeCategory = incomeCategories.find((category) => category.id === entry.income_category_id);
-            const type = incomeCategory?.name ?? 'Entrada';
-            const expenseCategory = categories.find((category) => category.id === entry.expense_category_id)?.name;
+            const incomeCategory = incomeCategoryReferences.find((category) => category.id === entry.income_category_id);
+            const type = entry.income_category_name ?? incomeCategory?.name ?? 'Entrada';
+            const expenseCategory = entry.expense_category_name ?? categoryReferences.find((category) => category.id === entry.expense_category_id)?.name;
             const isSalary = type.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR') === 'salario';
-            return <li className="expense-item" key={entry.id}><span className="expense-symbol" style={expenseCategory ? { '--category-color': categoryColor(entry.expense_category_id) } : undefined} aria-hidden="true">{incomeCategory?.requires_expense_category && expenseCategory ? <CategoryIcon name={expenseCategory} size={18} /> : <Icon name={isSalary ? 'salary' : 'wallet'} size={18} />}</span><div className="expense-details"><strong>{entry.description}</strong><span>{type}{expenseCategory ? ` · ${expenseCategory}` : ''} · {formatDate(entry.received_date)}</span></div><strong className="expense-amount">{formatMoney(entry.amount)}</strong><div className="expense-actions"><button className="icon-button" type="button" onClick={() => { setEditingEntry(entry); setEntryMode(true); setActiveSection('form'); }} aria-label={`Editar ${entry.description}`} title="Editar entrada"><Icon name="edit" size={16} /></button><button className="icon-button delete-button" type="button" onClick={() => deleteIncomeEntry(entry)} aria-label={`Excluir ${entry.description}`} title="Excluir entrada"><Icon name="trash" size={16} /></button></div></li>;
+            return <li className="expense-item" key={entry.id}><span className="expense-symbol" style={expenseCategory ? { '--category-color': categoryColor(entry.expense_category_id) } : undefined} aria-hidden="true">{incomeCategory?.requires_expense_category && expenseCategory ? <CategoryIcon name={expenseCategory} size={18} /> : <Icon name={isSalary ? 'salary' : 'wallet'} size={18} />}</span><div className="expense-details"><strong>{entry.description}</strong><span>{type}{entry.income_category_deleted ? ' (excluída)' : ''}{expenseCategory ? ` · ${expenseCategory}${entry.expense_category_deleted ? ' (excluída)' : ''}` : ''} · {formatDate(entry.received_date)}</span></div><strong className="expense-amount">{formatMoney(entry.amount)}</strong><div className="expense-actions"><button className="icon-button" type="button" onClick={() => { setEditingEntry(entry); setEntryMode(true); setActiveSection('form'); }} aria-label={`Editar ${entry.description}`} title="Editar entrada"><Icon name="edit" size={16} /></button><button className="icon-button delete-button" type="button" onClick={() => deleteIncomeEntry(entry)} aria-label={`Excluir ${entry.description}`} title="Excluir entrada"><Icon name="trash" size={16} /></button></div></li>;
           })}</ul> : <EmptyState title="Nenhuma entrada neste mês." description="Salário e reembolsos aparecerão aqui após o cadastro." />}
           </section>
           <section className="monthly-payments-section" aria-label="Pagamentos do mês">
           <ExpenseList
             expenses={recentQuery.data}
-            categories={categories}
-            paymentMethods={paymentMethods}
+            userId={userId}
+            categories={categoryReferences}
+            paymentMethods={paymentMethodReferences}
             isLoading={recentQuery.isLoading || recentQuery.isFetching}
             error={recentQuery.error}
             refetch={recentQuery.refetch}

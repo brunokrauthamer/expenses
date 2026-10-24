@@ -17,6 +17,7 @@ class User(Base):
     name_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     encryption_key_version: Mapped[int] = mapped_column(nullable=False, default=1, server_default="1")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    reference_data_initialized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 

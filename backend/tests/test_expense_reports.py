@@ -25,6 +25,7 @@ def add_installment_purchase(
         first_installment_date=installment_amounts[0][0],
         category_id=category.id,
         payment_method_id=payment_method.id,
+        user_id=database.info["test_user_id"],
     )
     database.add(expense)
     database.flush()
@@ -43,10 +44,11 @@ def add_installment_purchase(
 
 
 def create_references(database: Session) -> tuple[Category, Category, PaymentMethod, PaymentMethod]:
-    groceries = Category(name="Mercado")
-    leisure = Category(name="Lazer")
-    pix = PaymentMethod(name="PIX")
-    card = PaymentMethod(name="Cartão de Crédito")
+    user_id = database.info["test_user_id"]
+    groceries = Category(name="Mercado", user_id=user_id)
+    leisure = Category(name="Lazer", user_id=user_id)
+    pix = PaymentMethod(name="PIX", user_id=user_id)
+    card = PaymentMethod(name="Cartão de Crédito", user_id=user_id)
     database.add_all([groceries, leisure, pix, card])
     database.commit()
     for reference in (groceries, leisure, pix, card):
@@ -58,8 +60,8 @@ def test_lookup_routes_return_sorted_database_values(client: TestClient, databas
     groceries, leisure, _, _ = create_references(database)
 
     assert client.get("/categories").json() == [
-        {"id": leisure.id, "name": "Lazer"},
-        {"id": groceries.id, "name": "Mercado"},
+        {"id": leisure.id, "name": "Lazer", "deleted_at": None},
+        {"id": groceries.id, "name": "Mercado", "deleted_at": None},
     ]
     assert [item["name"] for item in client.get("/payment-methods").json()] == [
         "Cartão de Crédito",

@@ -11,11 +11,10 @@ Aplicação pessoal para registrar compras, consultar as compras recentes e acom
 ## Executar localmente
 
 1. Instale as dependências: `pnpm install`.
-2. No primeiro uso, cadastre as referências padrão no backend a partir de `backend`: `.venv\Scripts\python.exe -m app.seed`.
-3. Ainda em `backend`, inicie a API: `.venv\Scripts\python.exe -m uvicorn app.main:app --reload`.
-4. Em `frontend`, copie `.env.example` para `.env` se quiser personalizar a configuração: `Copy-Item .env.example .env`.
-5. Em `frontend`, inicie o Vite: `pnpm dev`.
-6. Abra o endereço informado pelo Vite, normalmente `http://localhost:5173`.
+2. Ainda em `backend`, inicie a API: `.venv\Scripts\python.exe -m uvicorn app.main:app --reload`.
+3. Em `frontend`, copie `.env.example` para `.env` se quiser personalizar a configuração: `Copy-Item .env.example .env`.
+4. Em `frontend`, inicie o Vite: `pnpm dev`.
+5. Abra o endereço informado pelo Vite, normalmente `http://localhost:5173`.
 
 ## Configuração do ambiente
 
@@ -32,8 +31,8 @@ Em produção, uma opção é manter `VITE_API_BASE_URL=/api` e configurar o ser
 
 Variáveis `VITE_` são incorporadas ao código entregue ao navegador e são públicas: nunca coloque senhas, tokens ou outras credenciais nelas. Valores em `.env` e `.env.*` são locais e ignorados pelo Git, com exceção dos arquivos `.env.example`. Alterações em `VITE_API_BASE_URL` exigem um novo build para afetar os arquivos publicados.
 
-As rotas públicas de autenticação são `/entrar` e `/cadastro`; ambas oferecem e-mail/senha e, quando configurado, Google. As telas de despesas, gastos e consolidado exigem uma sessão. O access token fica em memória e é enviado como Bearer. O refresh token fica em cookie `HttpOnly`, então recarregar a aplicação restaura a sessão sem guardar tokens no armazenamento do navegador. O botão Google requer configuração OAuth no backend conforme `../backend/README.md`. Qualquer conta autenticada ainda vê o conjunto compartilhado de despesas e entradas.
+As rotas públicas de autenticação são `/entrar` e `/cadastro`; ambas oferecem e-mail/senha e, quando configurado, Google. As telas de despesas, gastos, consolidado e configurações exigem uma sessão. Novas contas recebem catálogos iniciais próprios no cadastro; os lançamentos ficam isolados por usuário. O access token fica em memória e é enviado como Bearer. O refresh token fica em cookie `HttpOnly`, então recarregar a aplicação restaura a sessão sem guardar tokens no armazenamento do navegador. O botão Google requer configuração OAuth no backend conforme `../backend/README.md`.
 
-As rotas de negócio são `/despesas`, `/gastos` e `/consolidado`. A rota `/gastos` mostra cobranças e reembolsos numa lista única, ordenada por data do evento; os reembolsos aparecem negativos e em vermelho. O resumo traz valores brutos, reembolsos e líquido. É possível filtrar por categoria, meio de pagamento e busca; filtros e página ficam na URL. O filtro por meio de pagamento afeta apenas cobranças. Os filtros do consolidado também ficam na URL e podem ser preservados ao recarregar a página. As referências e os resultados são mantidos em cache local por até 30 minutos e 2 minutos, respectivamente.
+As rotas de negócio são `/despesas`, `/gastos`, `/consolidado` e `/configuracoes`. Em Configurações, cada pessoa pode adicionar, renomear e excluir categorias de despesas, categorias de entradas e meios de pagamento. Excluídos deixam de aparecer em novos lançamentos e continuam identificados no histórico, nos filtros e nos relatórios. A rota `/gastos` mostra cobranças e reembolsos numa lista única, ordenada por data do evento; os reembolsos aparecem negativos e em vermelho. O resumo traz valores brutos, reembolsos e líquido. É possível filtrar por categoria, meio de pagamento e busca; filtros e página ficam na URL. O filtro por meio de pagamento afeta apenas cobranças. Os filtros do consolidado também ficam na URL e podem ser preservados ao recarregar a página. As referências e os resultados são mantidos em cache local por até 30 minutos e 2 minutos, respectivamente; o cache é separado por conta e limpo ao encerrar ou trocar a sessão.
 
 Para gerar uma versão de produção, execute `pnpm build`. Os arquivos gerados ficam em `dist/`. A hospedagem deve redirecionar rotas da aplicação, como `/despesas`, `/gastos` e `/consolidado`, para `index.html`.

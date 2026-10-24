@@ -70,13 +70,16 @@ def database() -> Session:
 
 @pytest.fixture
 def client(database: Session) -> TestClient:
+    user = User(id=uuid4(), email_ciphertext=b"test", email_lookup="test-user")
+    database.add(user)
+    database.commit()
+    database.info["test_user_id"] = user.id
+
     def get_test_database():
         yield database
 
     app.dependency_overrides[get_db] = get_test_database
-    app.dependency_overrides[get_current_user] = lambda: User(
-        id=uuid4(), email_ciphertext=b"test", email_lookup="test-user"
-    )
+    app.dependency_overrides[get_current_user] = lambda: user
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()

@@ -12,6 +12,7 @@ import { currentMonthISO, formatMoney, formatMonth, monthDistance, shiftMonth } 
 import { getQueryErrorMessage, useApiQuery } from '../shared/queryCache.js';
 import { useExpenseLookups } from '../shared/useExpenseLookups.js';
 import { api } from '../services/api.js';
+import { useAuth } from '../shared/AuthContext.jsx';
 
 function validMonth(value) {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(value ?? '') && Number(value.slice(0, 4)) > 0;
@@ -78,10 +79,10 @@ function ReportFilters({ filters, categories, paymentMethods, onChange, onReset 
       ? [{ label: `${formatMonth(filters.startMonth)} – ${formatMonth(filters.endMonth)}`, onRemove: () => onChange({ startMonth: defaults.startMonth, endMonth: defaults.endMonth }) }]
       : []),
     ...(filters.categoryId
-      ? [{ label: categories.find((item) => String(item.id) === filters.categoryId)?.name ?? 'Categoria', onRemove: () => onChange({ categoryId: '' }) }]
+      ? [{ label: `${categories.find((item) => String(item.id) === filters.categoryId)?.name ?? 'Categoria'}${categories.find((item) => String(item.id) === filters.categoryId)?.deleted_at ? ' (excluída)' : ''}`, onRemove: () => onChange({ categoryId: '' }) }]
       : []),
     ...(filters.paymentMethodId
-      ? [{ label: paymentMethods.find((item) => String(item.id) === filters.paymentMethodId)?.name ?? 'Pagamento', onRemove: () => onChange({ paymentMethodId: '' }) }]
+      ? [{ label: `${paymentMethods.find((item) => String(item.id) === filters.paymentMethodId)?.name ?? 'Pagamento'}${paymentMethods.find((item) => String(item.id) === filters.paymentMethodId)?.deleted_at ? ' (excluído)' : ''}`, onRemove: () => onChange({ paymentMethodId: '' }) }]
       : []),
     ...(filters.search ? [{ label: `Busca: ${filters.search}`, onRemove: () => onChange({ search: '' }) }] : []),
   ];
@@ -119,14 +120,14 @@ function ReportFilters({ filters, categories, paymentMethods, onChange, onReset 
             <span>Categoria</span>
             <select name="category" value={filters.categoryId} onChange={(event) => onChange({ categoryId: event.target.value })}>
               <option value="">Todas as categorias</option>
-              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}{category.deleted_at ? ' (excluída)' : ''}</option>)}
             </select>
           </label>
           <label className="field">
             <span>Meio de pagamento</span>
             <select name="paymentMethod" value={filters.paymentMethodId} onChange={(event) => onChange({ paymentMethodId: event.target.value })}>
               <option value="">Todos os meios</option>
-              {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}</option>)}
+              {paymentMethods.map((method) => <option key={method.id} value={method.id}>{method.name}{method.deleted_at ? ' (excluído)' : ''}</option>)}
             </select>
           </label>
           <DebouncedSearchField value={filters.search} onCommit={commitSearch} />
@@ -154,6 +155,8 @@ function ReportFilters({ filters, categories, paymentMethods, onChange, onReset 
 }
 
 export default function ReportsPage() {
+  const { user } = useAuth();
+  const userId = user?.id;
   const [activeSection, setActiveSection] = useState('monthly');
   const location = useLocation();
   const separator = location.indexOf('?');
@@ -170,17 +173,20 @@ export default function ReportsPage() {
     && monthDistance(filters.startMonth, filters.endMonth) >= 0
     && monthDistance(filters.startMonth, filters.endMonth) < 120;
   const fetchSummary = useCallback(({ signal }) => api.getSummary(filters, signal), [filters]);
-  const { categoriesQuery, paymentMethodsQuery, categories } = useExpenseLookups();
-  const summaryKey = useMemo(() => ['expenses', 'summary', filters], [filters]);
-  const summaryQuery = useApiQuery(summaryKey, fetchSummary, { enabled: rangeValid });
+  const lookups = useExpenseLookups(userId);
+  const { categoriesQuery, paymentMethodsQuery, categoryReferencesQuery, paymentMethodReferencesQuery } = lookups;
+  const categories = lookups.categoryReferences;
+  const paymentMethods = lookups.paymentMethodReferences;
+  const summaryKey = useMemo(() => [userId, 'expenses', 'summary', filters], [userId, filters]);
+  const summaryQuery = useApiQuery(summaryKey, fetchSummary, { enabled: rangeValid && Boolean(userId) });
 
-  if (summaryQuery.data) previousResult.current = { data: summaryQuery.data, filters };
+  if (summaryQuery.data) previousResult.current = { userId, data: summaryQuery.data, filters };
 
-  const visibleResult = summaryQuery.data ?? previousResult.current?.data;
-  const visibleFilters = summaryQuery.data ? filters : previousResult.current?.filters;
-  const paymentMethods = paymentMethodsQuery.data ?? [];
+  const previousForUser = previousResult.current?.userId === userId ? previousResult.current : null;
+  const visibleResult = summaryQuery.data ?? previousForUser?.data;
+  const visibleFilters = summaryQuery.data ? filters : previousForUser?.filters;
   const isFetching = summaryQuery.isFetching;
-  const hasLookupError = (categoriesQuery.error && !categoriesQuery.data) || (paymentMethodsQuery.error && !paymentMethodsQuery.data);
+  const hasLookupError = (categoriesQuery.error && !categoriesQuery.data) || (paymentMethodsQuery.error && !paymentMethodsQuery.data) || (categoryReferencesQuery.error && !categoryReferencesQuery.data) || (paymentMethodReferencesQuery.error && !paymentMethodReferencesQuery.data);
   const hasNotices = !rangeValid || (isFetching && visibleResult) || hasLookupError || summaryQuery.error;
 
   return (
@@ -234,7 +240,7 @@ export default function ReportsPage() {
               {hasLookupError && (
                 <div className="query-state error-state" role="alert">
                   <p>Não foi possível carregar as categorias ou os meios de pagamento.</p>
-                  <button className="text-button" type="button" onClick={() => { categoriesQuery.refetch(); paymentMethodsQuery.refetch(); }}>Tentar novamente</button>
+                  <button className="text-button" type="button" onClick={() => { categoriesQuery.refetch(); paymentMethodsQuery.refetch(); categoryReferencesQuery.refetch(); paymentMethodReferencesQuery.refetch(); }}>Tentar novamente</button>
                 </div>
               )}
               {summaryQuery.error && (

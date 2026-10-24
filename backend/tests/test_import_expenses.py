@@ -2,7 +2,11 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from app.import_expenses import SourceRow, _prepare
+from app.import_expenses import PreparedExpense, SourceRow, _persist, _prepare
+from app.modules.auth.model import User
+from app.modules.categories.model import Category
+from app.modules.expenses.model import Expense, ExpenseImportSource
+from app.modules.payment_methods.model import PaymentMethod
 
 
 MONTHS = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5}
@@ -101,3 +105,33 @@ def test_first_installment_alone_estimates_total_from_installment_value() -> Non
     assert len(prepared) == 1
     assert prepared[0].amounts == (Decimal("12.34"),) * 4
     assert prepared[0].total == Decimal("49.36")
+
+
+def test_import_deduplication_is_scoped_to_each_user(client, database) -> None:
+    first_user_id = database.info["test_user_id"]
+    second_user = User(email_ciphertext=b"second", email_lookup="second-import-user")
+    database.add(second_user)
+    database.flush()
+    for user_id in (first_user_id, second_user.id):
+        database.add_all([
+            Category(name="Mercado", user_id=user_id),
+            PaymentMethod(name="PIX", user_id=user_id),
+        ])
+    database.commit()
+
+    row = SourceRow(
+        path=Path("GASTOS CARTÃO jan_2026.xlsx"), row_number=2,
+        expense_date=date(2026, 1, 1), installment_number=None, installment_count=None,
+        payment_method="PIX", category="Mercado", description="Compra importada",
+        amount=Decimal("12.50"),
+    )
+    prepared = PreparedExpense(
+        description="Compra importada", category_name="Mercado", payment_method_name="PIX",
+        expense_date=date(2026, 1, 1), amounts=(Decimal("12.50"),), sources=(row,),
+    )
+    assert _persist(database, [prepared], first_user_id) == 1
+    assert _persist(database, [prepared], first_user_id) == 0
+    assert _persist(database, [prepared], second_user.id) == 1
+    assert database.query(Expense).count() == 2
+    assert database.query(ExpenseImportSource).count() == 2
+    assert {item.user_id for item in database.query(Expense).all()} == {first_user_id, second_user.id}

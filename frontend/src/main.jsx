@@ -11,7 +11,8 @@ import './viewport.css';
 const ExpensesPage = lazy(() => import('./pages/ExpensesPage.jsx'));
 const ReportsPage = lazy(() => import('./pages/ReportsPage.jsx'));
 const ExpenseHistoryPage = lazy(() => import('./pages/ExpenseHistoryPage.jsx'));
-const AUTH_DESTINATIONS = new Set(['/despesas', '/gastos', '/consolidado']);
+const SettingsPage = lazy(() => import('./pages/SettingsPage.jsx'));
+const AUTH_DESTINATIONS = new Set(['/despesas', '/gastos', '/consolidado', '/configuracoes']);
 
 function safeAuthDestination(value) {
   try {
@@ -40,6 +41,9 @@ function Header({ activeRoute, user, onSignOut }) {
         </AppLink>
         <AppLink className={`nav-link${activeRoute === '/gastos' ? ' is-active' : ''}`} to="/gastos" aria-current={activeRoute === '/gastos' ? 'page' : undefined}>
           <Icon name="entry" /> Gastos do mês
+        </AppLink>
+        <AppLink className={`nav-link${activeRoute === '/configuracoes' ? ' is-active' : ''}`} to="/configuracoes" aria-current={activeRoute === '/configuracoes' ? 'page' : undefined}>
+          <Icon name="settings" /> Configurações
         </AppLink>
       </nav>
       <div className="account-actions">
@@ -89,6 +93,7 @@ function App() {
   if (activeRoute === '/despesas') page = <ExpensesPage />;
   else if (activeRoute === '/consolidado') page = <ReportsPage />;
   else if (activeRoute === '/gastos') page = <ExpenseHistoryPage />;
+  else if (activeRoute === '/configuracoes') page = <SettingsPage />;
   else page = (
     <section className="panel route-error" aria-labelledby="not-found-heading">
       <span className="step-number">404</span>

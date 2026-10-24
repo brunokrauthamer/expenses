@@ -3,6 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
+from app.modules.auth.model import User
 from app.modules.expenses.schema import (
     ExpenseCreate,
     ExpenseInstallmentResponse,
@@ -25,6 +26,7 @@ from app.modules.expenses.service import (
     update_expense,
 )
 from app.shared.dependencies import get_db
+from app.shared.auth import get_current_user
 from app.shared.exceptions import ResourceNotFoundError
 
 router = APIRouter(tags=["Despesas"])
@@ -41,10 +43,12 @@ def get_expenses(
     category_id: int | None = Query(default=None, ge=1),
     payment_method_id: int | None = Query(default=None, ge=1),
     database: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> ExpensePage:
     _validate_month_range(month, start_month, end_month)
     installments, total = list_expenses(
         database,
+        user.id,
         page,
         page_size,
         month,
@@ -70,8 +74,12 @@ def get_expenses(
                 total_amount=installment.expense.amount,
                 category_id=installment.expense.category_id,
                 payment_method_id=installment.expense.payment_method_id,
+                category_name=category_name,
+                category_deleted=category_deleted_at is not None,
+                payment_method_name=payment_method_name,
+                payment_method_deleted=payment_method_deleted_at is not None,
             )
-            for installment in installments
+            for installment, category_name, category_deleted_at, payment_method_name, payment_method_deleted_at in installments
         ],
         page=page,
         page_size=page_size,
@@ -89,10 +97,11 @@ def get_expense_history(
     category_id: int | None = Query(default=None, ge=1),
     payment_method_id: int | None = Query(default=None, ge=1),
     database: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> ExpenseHistoryPage:
     _validate_month_range(month, None, None)
     items, total, gross_amount, reimbursement_amount, net_amount = list_expense_history(
-        database, page, page_size, month, search, category_id, payment_method_id
+        database, user.id, page, page_size, month, search, category_id, payment_method_id
     )
     return ExpenseHistoryPage(
         items=[ExpenseHistoryItem(**item) for item in items],
@@ -108,14 +117,34 @@ def get_expense_history(
 def get_recent_expenses(
     limit: int = Query(default=10, ge=1, le=50),
     database: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[ExpenseResponse]:
-    return list_recent_expenses(database, limit)
+    return [
+        ExpenseResponse(
+            id=expense.id,
+            description=expense.description,
+            amount=expense.amount,
+            expense_date=expense.expense_date,
+            payment_type=expense.payment_type,
+            installment_count=expense.installment_count,
+            first_installment_date=expense.first_installment_date,
+            category_id=expense.category_id,
+            payment_method_id=expense.payment_method_id,
+            created_at=expense.created_at,
+            category_name=category_name,
+            category_deleted=category_deleted_at is not None,
+            payment_method_name=payment_method_name,
+            payment_method_deleted=payment_method_deleted_at is not None,
+        )
+        for expense, category_name, category_deleted_at, payment_method_name, payment_method_deleted_at in list_recent_expenses(database, user.id, limit)
+    ]
 
 
 @router.get("/month", response_model=list[ExpenseMonthlyPaymentResponse])
 def get_expenses_paid_in_month(
     month: str = Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
     database: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[ExpenseMonthlyPaymentResponse]:
     return [
         ExpenseMonthlyPaymentResponse(
@@ -132,8 +161,12 @@ def get_expenses_paid_in_month(
             due_date=installment.due_date,
             installment_number=installment.installment_number,
             installment_amount=installment.amount,
+            category_name=category_name,
+            category_deleted=category_deleted_at is not None,
+            payment_method_name=payment_method_name,
+            payment_method_deleted=payment_method_deleted_at is not None,
         )
-        for expense, installment in list_expenses_paid_in_month(database, month)
+        for expense, installment, category_name, category_deleted_at, payment_method_name, payment_method_deleted_at in list_expenses_paid_in_month(database, user.id, month)
     ]
 
 
@@ -145,10 +178,11 @@ def get_expenses_summary(
     category_id: int | None = Query(default=None, ge=1),
     payment_method_id: int | None = Query(default=None, ge=1),
     database: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> ExpenseSummaryResponse:
     _validate_month_range(None, start_month, end_month)
     return get_expense_summary(
-        database, start_month, end_month, search, category_id, payment_method_id
+        database, user.id, start_month, end_month, search, category_id, payment_method_id
     )
 
 
@@ -191,11 +225,13 @@ def _validate_month_range(
 
 
 @router.post("", response_model=ExpenseResponse, status_code=status.HTTP_201_CREATED)
-def post_expense(data: ExpenseCreate, database: Session = Depends(get_db)) -> ExpenseResponse:
+def post_expense(data: ExpenseCreate, database: Session = Depends(get_db), user: User = Depends(get_current_user)) -> ExpenseResponse:
     try:
-        return create_expense(database, data)
+        return create_expense(database, user.id, data)
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.put("/{expense_id}", response_model=ExpenseResponse)
@@ -203,17 +239,20 @@ def put_expense(
     expense_id: int,
     data: ExpenseUpdate,
     database: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> ExpenseResponse:
     try:
-        return update_expense(database, expense_id, data)
+        return update_expense(database, user.id, expense_id, data)
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 @router.delete("/{expense_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_expense_route(expense_id: int, database: Session = Depends(get_db)) -> Response:
+def delete_expense_route(expense_id: int, database: Session = Depends(get_db), user: User = Depends(get_current_user)) -> Response:
     try:
-        delete_expense(database, expense_id)
+        delete_expense(database, user.id, expense_id)
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)

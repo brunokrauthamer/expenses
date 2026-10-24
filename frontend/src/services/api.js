@@ -1,12 +1,15 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || '/api').replace(/\/+$/, '');
 let accessToken = null;
 let refreshRequest = null;
+let authGeneration = 0;
 
 export function setAccessToken(token) {
+  authGeneration += 1;
   accessToken = token;
 }
 
 export function clearAccessToken() {
+  authGeneration += 1;
   accessToken = null;
 }
 
@@ -92,9 +95,13 @@ async function refreshAccessToken({ force = false } = {}) {
     try { await refreshRequest; } catch { /* A conclusão OAuth usa o cookie recém-definido. */ }
   }
   if (!refreshRequest) {
+    const generation = authGeneration;
     refreshRequest = request('/auth/refresh', { method: 'POST', skipAuth: true, retryAuth: false })
       .then((result) => {
-        setAccessToken(result.access_token);
+        if (authGeneration === generation) {
+          accessToken = result.access_token;
+          authGeneration += 1;
+        }
         return result;
       })
       .finally(() => { refreshRequest = null; });
@@ -112,9 +119,18 @@ export const api = {
     const params = new URLSearchParams({ mode, request_id: requestId, next });
     return `${API_BASE_URL}/auth/google/start?${params}`;
   },
-  getCategories: (signal) => request('/categories', { signal }),
-  getPaymentMethods: (signal) => request('/payment-methods', { signal }),
-  getIncomeCategories: (signal) => request('/income-categories', { signal }),
+  getCategories: (signal, includeDeleted = false) => request(`/categories${includeDeleted ? '?include_deleted=true' : ''}`, { signal }),
+  getPaymentMethods: (signal, includeDeleted = false) => request(`/payment-methods${includeDeleted ? '?include_deleted=true' : ''}`, { signal }),
+  getIncomeCategories: (signal, includeDeleted = false) => request(`/income-categories${includeDeleted ? '?include_deleted=true' : ''}`, { signal }),
+  createCategory: (data) => request('/categories', { method: 'POST', body: data }),
+  updateCategory: (id, data) => request(`/categories/${id}`, { method: 'PUT', body: data }),
+  deleteCategory: (id) => request(`/categories/${id}`, { method: 'DELETE' }),
+  createPaymentMethod: (data) => request('/payment-methods', { method: 'POST', body: data }),
+  updatePaymentMethod: (id, data) => request(`/payment-methods/${id}`, { method: 'PUT', body: data }),
+  deletePaymentMethod: (id) => request(`/payment-methods/${id}`, { method: 'DELETE' }),
+  createIncomeCategory: (data) => request('/income-categories', { method: 'POST', body: data }),
+  updateIncomeCategory: (id, data) => request(`/income-categories/${id}`, { method: 'PUT', body: data }),
+  deleteIncomeCategory: (id) => request(`/income-categories/${id}`, { method: 'DELETE' }),
   getIncomeEntries: (filters = {}, signal) => {
     const params = new URLSearchParams();
     if (filters.startMonth) params.set('start_month', filters.startMonth);

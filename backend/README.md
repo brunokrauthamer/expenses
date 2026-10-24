@@ -19,15 +19,17 @@ Os módulos existentes incluem `auth`, `categories`, `expenses`, `income_entries
 2. Copie `.env.example` para `.env`, ajuste `DATABASE_URL` e configure as chaves de autenticação descritas abaixo.
 3. Crie e ative um ambiente virtual Python.
 4. Instale as dependências: `pip install -r requirements.txt`.
-5. Aplique as migrações: `alembic upgrade head`.
+5. Faça um backup do banco e aplique as migrações: `alembic upgrade head`.
 
-As migrações criam as tabelas de negócio e, na revisão `20261022_0007`, as tabelas de usuários, credenciais, identidades externas e sessões. Para inserir as categorias e os meios de pagamento iniciais, execute a partir de `backend`:
+As revisões até `20261022_0007` criam as tabelas financeiras e de autenticação. A revisão `20261024_0008` atribui os dados antigos a uma única conta, cria chaves compostas de propriedade e passa os três catálogos para cada usuário. Se houver dados antigos, ela exige exatamente um usuário e interrompe a transação quando a propriedade não for inequívoca ou houver nomes que colidam após normalização. Faça o backup, pare a aplicação durante a atualização e confirme os dados antes de reabrir o serviço.
+
+Novas contas recebem seus catálogos padrão durante o cadastro ou o primeiro login Google. Para inicializar manualmente uma conta existente ainda sem catálogos, execute a partir de `backend`:
 
 ```powershell
-python -m app.seed
+python -m app.seed --user-id <UUID-DA-CONTA>
 ```
 
-O seeder pode ser executado novamente; ele insere apenas os nomes ausentes.
+O seeder registra a inicialização uma única vez. Repeti-lo não restaura padrões que tenham sido renomeados ou excluídos.
 
 ## Autenticação e chaves
 
@@ -58,18 +60,18 @@ No desenvolvimento local, `iniciar.ps1` desativa o access log do Uvicorn para n�
 
 Se um e-mail Google corresponder a uma conta local existente, o vínculo automático só é permitido para Gmail ou para um domínio Workspace confirmado pelo Google. Para outros domínios, a pessoa pode continuar usando e-mail e senha; o vínculo da identidade Google exige suporte para evitar associação indevida.
 
-As contas podem ver, cadastrar, editar e excluir os mesmos gastos e entradas nesta versão. As tabelas de negócio ainda não têm `user_id`.
+Cada conta vê somente suas despesas, entradas e catálogos. Cadastros de referência podem ser renomeados ou excluídos logicamente; o histórico continua disponível pelo ID original.
 
 ## Importar gastos de planilhas
 
 Depois de instalar as dependências e aplicar as migrações, deixe as planilhas mensais
 na pasta Downloads e confira a prévia com:
 
-    python -m app.import_expenses
+    python -m app.import_expenses --user-id <UUID-DA-CONTA>
 
 A prévia não altera o banco. Depois de conferir os itens, execute:
 
-    python -m app.import_expenses --apply
+    python -m app.import_expenses --user-id <UUID-DA-CONTA> --apply
 
 O importador também aceita caminhos de arquivos .xlsx após o comando. Cada linha de
 origem é registrada para evitar a duplicação quando os mesmos arquivos são enviados
@@ -91,7 +93,8 @@ nas primeiras parcelas; os outros meses são gerados a partir da primeira cobran
 
 Para o frontend:
 
-- `GET /categories` e `GET /payment-methods` retornam as referências em ordem alfabética.
+- `GET /categories`, `/income-categories` e `/payment-methods` retornam os cadastros ativos do usuário em ordem alfabética. `?include_deleted=true` inclui os excluídos para filtros e gestão histórica.
+- `POST`, `PUT /{id}` e `DELETE /{id}` estão disponíveis nas três rotas de referência. O DELETE preenche `deleted_at` e preserva despesas, entradas e parcelas antigos; criar ou renomear um cadastro ativo com nome já usado retorna 409.
 - `GET /expenses/recent?limit=10` retorna compras únicas em ordem de cadastro mais recente (`created_at`, com o ID como desempate). O limite aceito é de 1 a 50.
 - `GET /expenses/summary` exige `start_month` e `end_month` (`AAAA-MM`) e aceita também `category_id`, `payment_method_id` e `search`. Retorna `total_amount_due`, uma lista de `monthly_totals` e outra de `category_totals`. O total é a soma das cobranças dentro dos filtros; meses sem cobranças são preenchidos com zero. O período aceita até 120 meses inclusivos.
 
@@ -103,9 +106,9 @@ O PUT continua atualizando o gasto inteiro. Mudanças no valor, nas datas ou na 
 
 ## Entradas e reembolsos
 
-A migração `20261022_0006` cria `income_categories` e `income_entries`. Depois de atualizar o banco, execute `python -m app.seed` para cadastrar Salário e Reembolso. O seeder pode ser repetido.
+A migração `20261022_0006` cria `income_categories` e `income_entries`; `20261024_0008` atribui esses dados ao proprietário e ativa catálogos individuais.
 
-- `GET /income-categories` lista as categorias de entrada e informa `requires_expense_category`.
+- `GET /income-categories` lista categorias de entrada e informa `requires_expense_category`; o campo permanece independente do nome. Depois de haver uma entrada vinculada, a regra não pode mudar.
 - `GET /income-entries` lista entradas paginadas; aceita `start_month`, `end_month`, `income_category_id`, `expense_category_id` e `search`.
 - `POST /income-entries`, `PUT /income-entries/{id}` e `DELETE /income-entries/{id}` fazem o CRUD de entradas.
 
