@@ -12,8 +12,9 @@ from app.modules.income_entries.model import IncomeCategory, IncomeEntry
 
 
 def create_references(database: Session) -> tuple[Category, PaymentMethod]:
-    category = Category(name="Alimentação")
-    payment_method = PaymentMethod(name="Cartão de crédito")
+    user_id = database.info["test_user_id"]
+    category = Category(name="Alimentação", user_id=user_id)
+    payment_method = PaymentMethod(name="Cartão de crédito", user_id=user_id)
     database.add_all([category, payment_method])
     database.commit()
     database.refresh(category)
@@ -36,6 +37,7 @@ def create_expense(
         first_installment_date=expense_date,
         category_id=category_id,
         payment_method_id=payment_method_id,
+        user_id=database.info["test_user_id"],
     )
     database.add(expense)
     database.flush()
@@ -99,19 +101,22 @@ def test_expense_history_combines_charges_and_reimbursements_with_global_paginat
     database.query(ExpenseInstallment).filter_by(expense_id=newer_expense.id).update(
         {"due_date": date(2026, 10, 20)}
     )
-    reimbursement_category = IncomeCategory(name="Reembolso", requires_expense_category=True)
-    salary_category = IncomeCategory(name="Salário", requires_expense_category=False)
+    user_id = database.info["test_user_id"]
+    reimbursement_category = IncomeCategory(name="Reembolso", user_id=user_id, requires_expense_category=True)
+    salary_category = IncomeCategory(name="Salário", user_id=user_id, requires_expense_category=False)
     database.add_all([reimbursement_category, salary_category])
     database.flush()
     reimbursement = IncomeEntry(
         description="Devolução", amount=Decimal("10.00"), received_date=date(2026, 10, 15),
         income_category_id=reimbursement_category.id, expense_category_id=category.id,
+        user_id=user_id,
     )
     database.add_all([
         reimbursement,
         IncomeEntry(
             description="Salário", amount=Decimal("1000.00"), received_date=date(2026, 10, 28),
             income_category_id=salary_category.id,
+            user_id=user_id,
         ),
     ])
     database.commit()

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.modules.auth.model import ExternalIdentity, LocalCredential, RefreshSession, User
 from app.shared.auth import create_access_token
 from app.shared.crypto import decrypt_personal_data, encrypt_personal_data, lookup_digest, token_digest
+from app.shared.reference_data import initialize_user_reference_data
 
 password_hasher = PasswordHasher()
 _DUMMY_PASSWORD_HASH = password_hasher.hash("expenses-invalid-account-check")
@@ -38,6 +39,7 @@ def _new_user(database: Session, email: str, name: str | None = None) -> User:
     )
     database.add(user)
     database.flush()
+    initialize_user_reference_data(database, user)
     return user
 
 

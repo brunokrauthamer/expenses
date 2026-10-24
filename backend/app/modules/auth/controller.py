@@ -34,7 +34,7 @@ router = APIRouter(tags=["Autenticação"])
 REFRESH_COOKIE = "expenses_refresh"
 OAUTH_COOKIE = "expenses_google_oauth"
 OAUTH_PATH = f"{os.getenv('AUTH_COOKIE_PATH', '/api/auth')}/google"
-ALLOWED_DESTINATIONS = {"/despesas", "/gastos", "/consolidado"}
+ALLOWED_DESTINATIONS = {"/despesas", "/gastos", "/consolidado", "/configuracoes"}
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
 
 

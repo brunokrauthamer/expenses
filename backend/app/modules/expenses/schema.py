@@ -9,6 +9,7 @@ MAX_INSTALLMENT_COUNT = 1200
 
 
 class ExpenseCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     description: str = Field(min_length=1, max_length=120)
     amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
     amount_type: Literal["total", "installment"] = "total"
@@ -77,6 +78,10 @@ class ExpenseResponse(BaseModel):
     category_id: int
     payment_method_id: int
     created_at: datetime
+    category_name: str | None = None
+    category_deleted: bool | None = None
+    payment_method_name: str | None = None
+    payment_method_deleted: bool | None = None
 
 
 class ExpenseMonthlyPaymentResponse(ExpenseResponse):
@@ -99,6 +104,10 @@ class ExpenseInstallmentResponse(BaseModel):
     total_amount: Decimal
     category_id: int
     payment_method_id: int
+    category_name: str | None = None
+    category_deleted: bool | None = None
+    payment_method_name: str | None = None
+    payment_method_deleted: bool | None = None
 
 
 class ExpensePage(BaseModel):
@@ -123,6 +132,12 @@ class ExpenseHistoryItem(BaseModel):
     installment_count: int | None = None
     first_installment_date: date | None = None
     total_amount: Decimal | None = None
+    category_name: str | None = None
+    category_deleted: bool | None = None
+    payment_method_name: str | None = None
+    payment_method_deleted: bool | None = None
+    income_category_name: str | None = None
+    income_category_deleted: bool | None = None
 
 
 class ExpenseHistoryPage(BaseModel):

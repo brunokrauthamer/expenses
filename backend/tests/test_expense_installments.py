@@ -12,8 +12,9 @@ from app.modules.payment_methods.model import PaymentMethod
 
 
 def create_references(database: Session) -> tuple[Category, PaymentMethod]:
-    category = Category(name="Eletrônicos")
-    payment_method = PaymentMethod(name="Cartão")
+    user_id = database.info["test_user_id"]
+    category = Category(name="Eletrônicos", user_id=user_id)
+    payment_method = PaymentMethod(name="Cartão", user_id=user_id)
     database.add_all([category, payment_method])
     database.commit()
     return category, payment_method

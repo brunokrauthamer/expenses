@@ -10,10 +10,11 @@ from app.modules.payment_methods.model import PaymentMethod
 
 
 def test_reimbursement_requires_expense_category_and_salary_does_not(client, database: Session):
-    market = Category(name="Mercado")
-    pix = PaymentMethod(name="PIX")
-    salary = IncomeCategory(name="Salário", requires_expense_category=False)
-    refund = IncomeCategory(name="Reembolso", requires_expense_category=True)
+    user_id = database.info["test_user_id"]
+    market = Category(name="Mercado", user_id=user_id)
+    pix = PaymentMethod(name="PIX", user_id=user_id)
+    salary = IncomeCategory(name="Salário", user_id=user_id, requires_expense_category=False)
+    refund = IncomeCategory(name="Reembolso", user_id=user_id, requires_expense_category=True)
     database.add_all([market, pix, salary, refund])
     database.commit()
     category_response = client.get("/income-categories")
@@ -42,22 +43,23 @@ def test_reimbursement_requires_expense_category_and_salary_does_not(client, dat
 
 
 def test_summary_subtracts_reimbursements_by_expense_category(client, database: Session):
-    market = Category(name="Mercado")
-    salary = IncomeCategory(name="Salário", requires_expense_category=False)
-    refund = IncomeCategory(name="Reembolso", requires_expense_category=True)
+    user_id = database.info["test_user_id"]
+    market = Category(name="Mercado", user_id=user_id)
+    salary = IncomeCategory(name="Salário", user_id=user_id, requires_expense_category=False)
+    refund = IncomeCategory(name="Reembolso", user_id=user_id, requires_expense_category=True)
     database.add_all([market, salary, refund])
     database.flush()
-    pix = PaymentMethod(name="PIX")
+    pix = PaymentMethod(name="PIX", user_id=user_id)
     database.add(pix)
     database.flush()
-    expense = Expense(description="Churrasco", amount=Decimal("600.00"), expense_date=date(2026, 10, 22), installment_count=1, first_installment_date=date(2026, 10, 22), category_id=market.id, payment_method_id=pix.id)
+    expense = Expense(description="Churrasco", amount=Decimal("600.00"), expense_date=date(2026, 10, 22), installment_count=1, first_installment_date=date(2026, 10, 22), category_id=market.id, payment_method_id=pix.id, user_id=user_id)
     database.add(expense)
     database.flush()
     database.add(ExpenseInstallment(expense_id=expense.id, installment_number=1, amount=Decimal("600.00"), due_date=date(2026, 10, 22)))
     database.add_all([
-        IncomeEntry(description="Devolução 1", amount=Decimal("200.00"), received_date=date(2026, 10, 22), income_category_id=refund.id, expense_category_id=market.id),
-        IncomeEntry(description="Devolução 2", amount=Decimal("200.00"), received_date=date(2026, 10, 22), income_category_id=refund.id, expense_category_id=market.id),
-        IncomeEntry(description="Salário", amount=Decimal("8500.00"), received_date=date(2026, 10, 5), income_category_id=salary.id),
+        IncomeEntry(description="Devolução 1", amount=Decimal("200.00"), received_date=date(2026, 10, 22), income_category_id=refund.id, expense_category_id=market.id, user_id=user_id),
+        IncomeEntry(description="Devolução 2", amount=Decimal("200.00"), received_date=date(2026, 10, 22), income_category_id=refund.id, expense_category_id=market.id, user_id=user_id),
+        IncomeEntry(description="Salário", amount=Decimal("8500.00"), received_date=date(2026, 10, 5), income_category_id=salary.id, user_id=user_id),
     ])
     database.commit()
 
@@ -71,7 +73,7 @@ def test_summary_subtracts_reimbursements_by_expense_category(client, database: 
 
 
 def test_income_entry_update_delete_and_list(client, database: Session):
-    salary = IncomeCategory(name="Salário", requires_expense_category=False)
+    salary = IncomeCategory(name="Salário", user_id=database.info["test_user_id"], requires_expense_category=False)
     database.add(salary)
     database.commit()
     created = client.post("/income-entries", json={

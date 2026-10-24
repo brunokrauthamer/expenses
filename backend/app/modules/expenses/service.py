@@ -1,6 +1,7 @@
 from calendar import monthrange
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 from sqlalchemy import Integer, case, delete, func, literal, or_, select, union_all
 from sqlalchemy.orm import Session, selectinload
@@ -16,6 +17,7 @@ from app.shared.exceptions import ResourceNotFoundError
 
 def list_expenses(
     database: Session,
+    user_id: UUID,
     page: int,
     page_size: int,
     month: str | None = None,
@@ -27,6 +29,7 @@ def list_expenses(
 ) -> tuple[list[ExpenseInstallment], int]:
     """Retorna cobranças paginadas, com filtros compartilhados com os relatórios."""
     from_expense, filters = _filtered_expenses(
+        user_id=user_id,
         month=month,
         search=search,
         start_month=start_month,
@@ -35,7 +38,7 @@ def list_expenses(
         payment_method_id=payment_method_id,
     )
     statement = (
-        select(ExpenseInstallment)
+        select(ExpenseInstallment, Category.name, Category.deleted_at, PaymentMethod.name, PaymentMethod.deleted_at)
         .select_from(from_expense)
         .options(selectinload(ExpenseInstallment.expense))
         .where(*filters)
@@ -52,11 +55,12 @@ def list_expenses(
         .select_from(from_expense)
         .where(*filters)
     )
-    return list(database.scalars(statement)), database.scalar(count_statement) or 0
+    return list(database.execute(statement)), database.scalar(count_statement) or 0
 
 
 def list_expense_history(
     database: Session,
+    user_id: UUID,
     page: int,
     page_size: int,
     month: str,
@@ -66,6 +70,7 @@ def list_expense_history(
 ):
     """Combina cobranças e reembolsos em uma lista ordenada por data do evento."""
     expense_from, expense_filters = _filtered_expenses(
+        user_id=user_id,
         month=month,
         search=search,
         category_id=category_id,
@@ -85,13 +90,21 @@ def list_expense_history(
         Expense.installment_count.label("installment_count"),
         Expense.first_installment_date.label("first_installment_date"),
         Expense.amount.label("total_amount"),
+        Category.name.label("category_name"),
+        Category.deleted_at.is_not(None).label("category_deleted"),
+        PaymentMethod.name.label("payment_method_name"),
+        PaymentMethod.deleted_at.is_not(None).label("payment_method_deleted"),
+        literal(None).label("income_category_name"),
+        literal(None).label("income_category_deleted"),
     ).select_from(expense_from).where(*expense_filters)
 
     year, month_number = map(int, month.split("-"))
     first_day = date(year, month_number, 1)
     last_day = date(year, month_number, monthrange(year, month_number)[1])
     reimbursement_filters = [
+        IncomeEntry.user_id == user_id,
         IncomeEntry.received_date.between(first_day, last_day),
+        IncomeCategory.user_id == user_id,
         IncomeCategory.requires_expense_category.is_(True),
     ]
     if category_id is not None:
@@ -106,8 +119,8 @@ def list_expense_history(
         ))
     reimbursement_from = (
         IncomeEntry.__table__
-        .join(IncomeCategory.__table__, IncomeEntry.income_category_id == IncomeCategory.id)
-        .join(Category.__table__, IncomeEntry.expense_category_id == Category.id)
+        .join(IncomeCategory.__table__, (IncomeEntry.income_category_id == IncomeCategory.id) & (IncomeEntry.user_id == IncomeCategory.user_id))
+        .join(Category.__table__, (IncomeEntry.expense_category_id == Category.id) & (IncomeEntry.user_id == Category.user_id))
     )
     reimbursement_rows = select(
         literal("reimbursement").label("kind"),
@@ -123,6 +136,12 @@ def list_expense_history(
         literal(None, type_=Integer).label("installment_count"),
         literal(None).label("first_installment_date"),
         literal(None).label("total_amount"),
+        Category.name.label("category_name"),
+        Category.deleted_at.is_not(None).label("category_deleted"),
+        literal(None).label("payment_method_name"),
+        literal(None).label("payment_method_deleted"),
+        IncomeCategory.name.label("income_category_name"),
+        IncomeCategory.deleted_at.is_not(None).label("income_category_deleted"),
     ).select_from(reimbursement_from).where(*reimbursement_filters)
 
     combined = union_all(expense_rows, reimbursement_rows).subquery()
@@ -147,27 +166,32 @@ def list_expense_history(
     )
 
 
-def list_recent_expenses(database: Session, limit: int) -> list[Expense]:
+def list_recent_expenses(database: Session, user_id: UUID, limit: int):
     """Retorna compras únicas, ordenadas pela data de cadastro."""
     statement = (
-        select(Expense)
+        select(Expense, Category.name, Category.deleted_at, PaymentMethod.name, PaymentMethod.deleted_at)
+        .join(Category, (Expense.category_id == Category.id) & (Expense.user_id == Category.user_id))
+        .join(PaymentMethod, (Expense.payment_method_id == PaymentMethod.id) & (Expense.user_id == PaymentMethod.user_id))
+        .where(Expense.user_id == user_id)
         .order_by(Expense.created_at.desc(), Expense.id.desc())
         .limit(limit)
     )
-    return list(database.scalars(statement))
+    return list(database.execute(statement))
 
 
 def list_expenses_paid_in_month(
-    database: Session, month: str
-) -> list[tuple[Expense, ExpenseInstallment]]:
+    database: Session, user_id: UUID, month: str
+):
     """Retorna cada cobranÃ§a do mÃªs com os dados da compra correspondente."""
     first_day = date.fromisoformat(f"{month}-01")
     year, month_number = map(int, month.split("-"))
     last_day = date(year, month_number, monthrange(year, month_number)[1])
     statement = (
-        select(Expense, ExpenseInstallment)
+        select(Expense, ExpenseInstallment, Category.name, Category.deleted_at, PaymentMethod.name, PaymentMethod.deleted_at)
         .join(ExpenseInstallment, ExpenseInstallment.expense_id == Expense.id)
-        .where(ExpenseInstallment.due_date.between(first_day, last_day))
+        .join(Category, (Expense.category_id == Category.id) & (Expense.user_id == Category.user_id))
+        .join(PaymentMethod, (Expense.payment_method_id == PaymentMethod.id) & (Expense.user_id == PaymentMethod.user_id))
+        .where(Expense.user_id == user_id, ExpenseInstallment.due_date.between(first_day, last_day))
         .order_by(
             Expense.expense_date.desc(),
             Expense.id.desc(),
@@ -179,6 +203,7 @@ def list_expenses_paid_in_month(
 
 def get_expense_summary(
     database: Session,
+    user_id: UUID,
     start_month: str,
     end_month: str,
     search: str | None = None,
@@ -187,6 +212,7 @@ def get_expense_summary(
 ) -> dict[str, object]:
     """Agrega uma única consulta por mês e categoria para alimentar o resumo e os gráficos."""
     from_expense, filters = _filtered_expenses(
+        user_id=user_id,
         start_month=start_month,
         end_month=end_month,
         search=search,
@@ -218,7 +244,7 @@ def get_expense_summary(
         )
 
     reimbursement_months, reimbursement_categories = reimbursement_totals(
-        database, start_month, end_month, category_id, search,
+        database, user_id, start_month, end_month, category_id, search,
         include=payment_method_id is None,
     )
     months = _months_between(start_month, end_month)
@@ -259,6 +285,7 @@ def get_expense_summary(
 
 
 def _filtered_expenses(
+    user_id: UUID,
     month: str | None = None,
     search: str | None = None,
     start_month: str | None = None,
@@ -266,7 +293,7 @@ def _filtered_expenses(
     category_id: int | None = None,
     payment_method_id: int | None = None,
 ):
-    filters = []
+    filters = [Expense.user_id == user_id, Category.user_id == user_id, PaymentMethod.user_id == user_id]
     if month:
         start_month = end_month = month
     if start_month and end_month:
@@ -293,8 +320,8 @@ def _filtered_expenses(
     from_expense = (
         ExpenseInstallment.__table__
         .join(Expense.__table__, ExpenseInstallment.expense_id == Expense.id)
-        .join(Category.__table__, Expense.category_id == Category.id)
-        .join(PaymentMethod.__table__, Expense.payment_method_id == PaymentMethod.id)
+        .join(Category.__table__, (Expense.category_id == Category.id) & (Expense.user_id == Category.user_id))
+        .join(PaymentMethod.__table__, (Expense.payment_method_id == PaymentMethod.id) & (Expense.user_id == PaymentMethod.user_id))
     )
     return from_expense, filters
 
@@ -322,9 +349,9 @@ def _months_between(start_month: str, end_month: str) -> list[str]:
     return months
 
 
-def create_expense(database: Session, data: ExpenseCreate) -> Expense:
+def create_expense(database: Session, user_id: UUID, data: ExpenseCreate) -> Expense:
     """Valida referências e persiste a compra com todas as suas cobranças."""
-    _validate_references(database, data.category_id, data.payment_method_id)
+    _validate_references(database, user_id, data.category_id, data.payment_method_id)
     expense = Expense(
         description=data.description,
         amount=_total_amount(data),
@@ -333,6 +360,7 @@ def create_expense(database: Session, data: ExpenseCreate) -> Expense:
         first_installment_date=data.first_installment_date or data.expense_date,
         category_id=data.category_id,
         payment_method_id=data.payment_method_id,
+        user_id=user_id,
     )
     database.add(expense)
     try:
@@ -346,10 +374,14 @@ def create_expense(database: Session, data: ExpenseCreate) -> Expense:
     return expense
 
 
-def update_expense(database: Session, expense_id: int, data: ExpenseUpdate) -> Expense:
+def update_expense(database: Session, user_id: UUID, expense_id: int, data: ExpenseUpdate) -> Expense:
     """Atualiza a compra e recalcula as cobranças quando seu cronograma muda."""
-    expense = _get_expense(database, expense_id)
-    _validate_references(database, data.category_id, data.payment_method_id)
+    expense = _get_expense(database, user_id, expense_id)
+    _validate_references(
+        database, user_id, data.category_id, data.payment_method_id,
+        previous_category_id=expense.category_id,
+        previous_payment_method_id=expense.payment_method_id,
+    )
 
     new_amount = _total_amount(data)
     new_first_date = data.first_installment_date or data.expense_date
@@ -384,9 +416,9 @@ def update_expense(database: Session, expense_id: int, data: ExpenseUpdate) -> E
     return expense
 
 
-def delete_expense(database: Session, expense_id: int) -> None:
+def delete_expense(database: Session, user_id: UUID, expense_id: int) -> None:
     """Remove uma compra e todas as suas cobranças."""
-    expense = _get_expense(database, expense_id)
+    expense = _get_expense(database, user_id, expense_id)
     database.delete(expense)
     try:
         database.commit()
@@ -426,15 +458,29 @@ def _build_installments(expense: Expense, data: ExpenseCreate) -> list[ExpenseIn
     return installments
 
 
-def _get_expense(database: Session, expense_id: int) -> Expense:
-    expense = database.get(Expense, expense_id)
+def _get_expense(database: Session, user_id: UUID, expense_id: int) -> Expense:
+    expense = database.scalar(select(Expense).where(Expense.id == expense_id, Expense.user_id == user_id))
     if expense is None:
         raise ResourceNotFoundError("Despesa não encontrada.")
     return expense
 
 
-def _validate_references(database: Session, category_id: int, payment_method_id: int) -> None:
-    if database.get(Category, category_id) is None:
+def _validate_references(
+    database: Session,
+    user_id: UUID,
+    category_id: int,
+    payment_method_id: int,
+    *,
+    previous_category_id: int | None = None,
+    previous_payment_method_id: int | None = None,
+) -> None:
+    category = database.scalar(select(Category).where(Category.id == category_id, Category.user_id == user_id))
+    if category is None:
         raise ResourceNotFoundError("Categoria não encontrada.")
-    if database.get(PaymentMethod, payment_method_id) is None:
+    if category.deleted_at is not None and category_id != previous_category_id:
+        raise ValueError("Escolha uma categoria ativa.")
+    payment_method = database.scalar(select(PaymentMethod).where(PaymentMethod.id == payment_method_id, PaymentMethod.user_id == user_id))
+    if payment_method is None:
         raise ResourceNotFoundError("Meio de pagamento não encontrado.")
+    if payment_method.deleted_at is not None and payment_method_id != previous_payment_method_id:
+        raise ValueError("Escolha um meio de pagamento ativo.")

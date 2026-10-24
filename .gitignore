@@ -8,6 +8,7 @@ dist/
 client_secret_*.json
 *.pem
 backend/.keys/
+backend/.backups/
 backend/.env
 __pycache__/
 *.py[cod]

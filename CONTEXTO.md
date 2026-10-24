@@ -56,7 +56,7 @@ O cache compartilhado deduplica consultas, mantém referências por 30 minutos e
 
 Na revisão do layout, os cenários de API indisponível revelaram rejeições não tratadas nas chamadas deduplicadas do cache. O retorno dessas chamadas foi alinhado ao tratamento já existente da consulta original: falhas continuam no snapshot para exibição na interface, sem rejeitar uma promessa ignorada pelos assinantes. O cenário foi reproduzido e verificado no navegador.
 
-O backend oferece GETs para categorias e meios de pagamento, uma lista de compras recentes sem duplicar parcelas, pagamentos por mês em `GET /expenses/month?month=AAAA-MM` (com valor e número da parcela) e um resumo agregado por mês/categoria. A listagem paginada aceita período inclusivo de até 120 meses, categoria e meio de pagamento em combinação com os filtros existentes. O seeder é um comando separado. Em instalações sem dados de referência, executá-lo conforme `backend/README.md` antes de usar o cadastro.
+O backend oferece GETs para categorias, categorias de entrada e meios de pagamento por conta, com `include_deleted=true` para consultas históricas. Novas contas recebem catálogos próprios no cadastro local ou primeiro login Google. O comando opcional `python -m app.seed --user-id UUID` inicializa uma conta existente uma única vez. A listagem paginada aceita período inclusivo de até 120 meses, categoria e meio de pagamento em combinação com os filtros existentes.
 
 ### API de despesas
 
@@ -94,7 +94,21 @@ Implementado em 22/10/2026. O módulo `income_entries` usa `income_categories` e
 
 Implementada em 22/10/2026. A migração Alembic `20261022_0007` cria `users`, `local_credentials`, `external_identities` e `refresh_sessions`. E-mail, nome e identificador Google são cifrados com AES-256-GCM; índices HMAC separados permitem localizar identidades sem manter os valores em claro; senhas usam Argon2id. JWT RS256 de acesso expira em 15 minutos. Refresh tokens opacos são rotacionados e enviados em cookie `HttpOnly`, `SameSite=Lax`; o frontend guarda o access token somente em memória e tenta renovar a sessão ao receber 401.
 
-Todas as rotas de negócio exigem Bearer válido. Nesta primeira fase, as contas compartilham despesas, entradas, categorias e meios de pagamento. O frontend oferece `/entrar` e `/cadastro`. O fluxo Google usa Authorization Code com `state`, `nonce` e PKCE e só fica disponível depois de configurar as credenciais OAuth no backend. As chaves de criptografia e JWT precisam ser criadas e mantidas fora do Git; veja `backend/README.md`. A migração `20261022_0007` foi aplicada ao PostgreSQL local.
+Todas as rotas de negócio exigem Bearer válido e restringem consultas e alterações ao usuário autenticado. O frontend oferece `/entrar`, `/cadastro` e `/configuracoes`. O fluxo Google usa Authorization Code com `state`, `nonce` e PKCE e só fica disponível depois de configurar as credenciais OAuth no backend. As chaves de criptografia e JWT precisam ser criadas e mantidas fora do Git; veja `backend/README.md`. A migração `20261022_0007` foi aplicada ao PostgreSQL local; `20261024_0008` foi criada, mas ainda não foi aplicada ao banco local.
+
+### Dados individuais e cadastros personalizáveis (24/10/2026)
+
+O plano de requisitos está em [PLANO_DADOS_POR_USUARIO.md](PLANO_DADOS_POR_USUARIO.md). A implementação está na branch `feat/user-owned-finances`, criada a partir do commit `40d5b4d` após o merge da autenticação (PR #5). Modelos, migração `20261024_0008`, isolamento das rotas, CRUD de referências, inicialização de catálogos, importador e tela `/configuracoes` estão implementados. A migração ainda não foi aplicada ao PostgreSQL local; nenhuma alteração foi feita nos dados financeiros reais.
+
+Decisões implementadas:
+
+- `expenses` e `income_entries` recebem `user_id`; serviços financeiros, contagens, paginação, histórico combinado e consolidados usam o proprietário autenticado. IDs alheios retornam 404 e FKs compostas protegem os vínculos no banco.
+- A migração exige um usuário quando encontra dados legados, preserva os registros e IDs, verifica nomes conflitantes, vínculos, contagens e totais; downgrade bloqueia bancos com mais de um usuário. A execução da migração real requer backup e janela sem escritas.
+- Categorias, categorias de entradas e meios de pagamento têm CRUD por conta, nomes ativos únicos sem diferenciar caixa, exclusão lógica e reaproveitamento de nome com novo ID. Referências excluídas permanecem em históricos, buscas, filtros e totais.
+- Categorias de entrada mantêm `requires_expense_category`; não é possível alterar a regra depois do primeiro lançamento. Novos cadastros só aceitam referências ativas; edições antigas podem manter as referências excluídas que já possuíam.
+- Cadastro local e primeiro login Google criam catálogos padrões na transação da conta. Seeder e importador exigem `--user-id`; importações iguais deduplicam dentro da mesma conta.
+- `/configuracoes` permite adicionar, renomear e excluir referências. Opções ativas e históricas usam consultas e chaves de cache separadas; consultas financeiras incluem o ID do usuário e o cache é cancelado e limpo na saída ou troca de sessão.
+- Validação: **53 testes do backend passaram**, o teste focado do cache no Node passou e o build de produção do frontend concluiu. A migration também passou em um PostgreSQL 17 descartável: instalação vazia, legado com despesas parceladas, reembolso e fonte de importação, além da recusa de propriedade ambígua com rollback da transação. A revisão visual desktop/celular está pendente porque a automação do navegador encerrou ao não conseguir determinar a URL atual do Chrome com confiança. A migration não foi aplicada ao PostgreSQL real e nenhum dado financeiro real foi alterado.
 
 ### Comparação das implementações Google (24/10/2026)
 
@@ -106,7 +120,7 @@ Na branch combinada, `.gitignore` também exclui `client_secret_*.json`; o inici
 
 ## Execução local
 
-No primeiro uso, inicie o PostgreSQL, configure o backend e execute `python -m app.seed` a partir de `backend` para inserir as categorias e os meios de pagamento iniciais. Mantenha o FastAPI em execução enquanto usa a interface. Em seguida, a partir de `frontend`, com Node.js 20.19+ ou 22.12+ e pnpm:
+No primeiro uso, inicie o PostgreSQL, aplique as migrações após backup e inicie o FastAPI. As novas contas recebem os catálogos iniciais automaticamente. Para inicializar uma conta antiga sem catálogos, use `python -m app.seed --user-id UUID` a partir de `backend`. Em seguida, a partir de `frontend`, com Node.js 20.19+ ou 22.12+ e pnpm:
 
 ```powershell
 pnpm install
@@ -141,6 +155,8 @@ Os testes usam SQLite em memória, não o PostgreSQL local. Em 22/10/2026, os 36
 Frontend e backend ficam no mesmo repositório Git. O repositório GitHub `brunokrauthamer/expenses` foi criado pelo usuário e o remoto `origin` aponta para `https://github.com/brunokrauthamer/expenses.git`. O commit inicial `65e1b5c` (`Initial commit`) foi enviado para `master`.
 
 A identidade usada no commit veio do perfil GitHub conectado: Bruno Krauthamer (`brunokrauthamer@gmail.com`). Ela foi configurada localmente neste repositório. Os ajustes de layout de 19/10/2026 estão na branch local `feat/viewport-layout`, criada a partir de `master`. Em 24/10/2026, foi criada `feat/google-and-local-login` a partir de `master` para combinar login local e Google. Confirme a branch e o estado de trabalho antes de agir. O Git está disponível por `C:/Program Files/Git/cmd/git.exe`, mesmo quando ausente do PATH. Futuras melhorias devem usar branches separadas e PRs para `master`. Não há necessidade de branches principais `dev`, `qa` ou `staging`.
+
+Em 24/10/2026, após o merge da PR #5 em `master` (`40d5b4d`), foi criada e selecionada a branch local `feat/user-owned-finances` para o avanço de dados individuais e cadastros editáveis. Ela contém inicialmente apenas o planejamento em `PLANO_DADOS_POR_USUARIO.md` e a atualização deste contexto, sem commit ou push nesta etapa. Os logs não rastreados `frontend/vite.log` e `frontend/vite-error.log` foram preservados.
 
 O primeiro push falhou sob a rede restrita do ambiente e foi concluído após autorização de rede. Se um push futuro falhar por conectividade, verificar a rede/autenticação GitHub e repetir com o acesso apropriado. A integração GitHub disponível no chat pode consultar recursos, mas não oferece criação de repositórios. Navegador e GitHub CLI não estavam disponíveis naquela sessão.
 

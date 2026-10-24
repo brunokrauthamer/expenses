@@ -29,6 +29,7 @@ function getEntry(key) {
       requestVersion: 0,
       abortTimeout: null,
       garbageCollectionTimeout: null,
+      disposed: false,
     });
   }
   return entries.get(hash);
@@ -72,6 +73,7 @@ function waitBeforeRetry(signal) {
 }
 
 async function fetchQuery(entry, queryFn) {
+  if (entry.disposed) return undefined;
   // A promise backed by an aborted controller cannot satisfy a new subscriber.
   // Do not deduplicate against it; start a fresh request instead.
   // The original caller publishes errors in the snapshot. Deduplicated callers
@@ -136,6 +138,7 @@ async function fetchQuery(entry, queryFn) {
 }
 
 function subscribe(entry, listener) {
+  if (entry.disposed) return () => {};
   entry.listeners.add(listener);
   if (entry.garbageCollectionTimeout !== null) {
     window.clearTimeout(entry.garbageCollectionTimeout);
@@ -151,6 +154,7 @@ function subscribe(entry, listener) {
 
   return () => {
     entry.listeners.delete(listener);
+    if (entry.disposed) return;
     if (!entry.listeners.size && entry.promise) {
       entry.abortTimeout = window.setTimeout(() => {
         entry.abortTimeout = null;
@@ -179,6 +183,17 @@ export function useApiQuery(key, queryFn, { staleTime = 2 * 60 * 1000, enabled =
   const snapshot = useSyncExternalStore(connect, read, read);
   const refetch = useCallback(() => fetchQuery(entry, queryFn), [entry, queryFn]);
   return { ...snapshot, refetch };
+}
+
+export function subscribeToCachedQuery(key, queryFn, { staleTime = 2 * 60 * 1000 } = {}, listener) {
+  const entry = getEntry(key);
+  entry.queryFn = queryFn;
+  entry.staleTime = staleTime;
+  return subscribe(entry, listener);
+}
+
+export function getCachedQuerySnapshot(key) {
+  return getEntry(key).snapshot;
 }
 
 export function updateCachedQuery(key, updater) {
@@ -214,6 +229,24 @@ export function invalidateCachedQueries(prefix) {
     notify(entry);
     if (entry.listeners.size) fetchQuery(entry, entry.queryFn);
   }
+}
+
+export function clearQueryCache() {
+  for (const entry of entries.values()) {
+    entry.disposed = true;
+    entry.requestVersion += 1;
+    entry.controller?.abort();
+    entry.controller = null;
+    entry.promise = null;
+    if (entry.abortTimeout !== null) window.clearTimeout(entry.abortTimeout);
+    if (entry.garbageCollectionTimeout !== null) window.clearTimeout(entry.garbageCollectionTimeout);
+    entry.abortTimeout = null;
+    entry.garbageCollectionTimeout = null;
+    entry.updatedAt = 0;
+    entry.snapshot = EMPTY_SNAPSHOT;
+    notify(entry);
+  }
+  entries.clear();
 }
 
 if (typeof window !== 'undefined') {

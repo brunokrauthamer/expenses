@@ -12,12 +12,15 @@ export function categoryColor(categoryId) {
 
 export default function CategoryChart({ totals, categories, isUpdating }) {
   const maximum = Math.max(0, ...totals.map((item) => Math.abs(Number(item.amount_due))));
-  const rows = totals.map((item, index) => ({
-    ...item,
-    name: categories.find((category) => category.id === item.category_id)?.name ?? 'Categoria',
-    percent: maximum === 0 ? 0 : Math.max((Math.abs(Number(item.amount_due)) / maximum) * 100, 1.5),
-    color: categoryColor(item.category_id),
-  }));
+  const rows = totals.map((item, index) => {
+    const category = categories.find((record) => record.id === item.category_id);
+    return {
+      ...item,
+      name: `${category?.name ?? 'Categoria'}${category?.deleted_at ? ' (excluída)' : ''}`,
+      percent: maximum === 0 ? 0 : Math.max((Math.abs(Number(item.amount_due)) / maximum) * 100, 1.5),
+      color: categoryColor(item.category_id),
+    };
+  });
 
   return (
     <div className={`category-chart${isUpdating ? ' is-updating' : ''}`}>

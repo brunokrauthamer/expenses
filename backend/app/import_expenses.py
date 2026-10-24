@@ -15,6 +15,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Iterable
+from uuid import UUID
 
 from openpyxl import load_workbook
 from sqlalchemy import select
@@ -25,6 +26,7 @@ import app.modules.registry  # noqa: F401
 from app.modules.categories.model import Category
 from app.modules.expenses.model import Expense, ExpenseImportSource, ExpenseInstallment
 from app.modules.payment_methods.model import PaymentMethod
+from app.modules.auth.model import User
 
 
 MONTHS = {
@@ -343,10 +345,13 @@ def _preview(paths, prepared, issues, subscriptions, nonpositive, ignored_catego
         print(label)
 
 
-def _persist(database: Session, prepared: list[PreparedExpense]) -> int:
+def _persist(database: Session, prepared: list[PreparedExpense], user_id: UUID) -> int:
     source_keys = [source.source_key for item in prepared for source in item.sources]
     existing = set(database.scalars(
-        select(ExpenseImportSource.source_key).where(ExpenseImportSource.source_key.in_(source_keys))
+        select(ExpenseImportSource.source_key).where(
+            ExpenseImportSource.user_id == user_id,
+            ExpenseImportSource.source_key.in_(source_keys),
+        )
     )) if source_keys else set()
     if existing:
         if existing == set(source_keys):
@@ -354,8 +359,8 @@ def _persist(database: Session, prepared: list[PreparedExpense]) -> int:
             return 0
         raise ValueError("Importação parcial detectada; gravação cancelada para evitar duplicatas.")
 
-    categories = {item.name: item.id for item in database.scalars(select(Category))}
-    methods = {item.name: item.id for item in database.scalars(select(PaymentMethod))}
+    categories = {item.name: item.id for item in database.scalars(select(Category).where(Category.user_id == user_id, Category.deleted_at.is_(None)))}
+    methods = {item.name: item.id for item in database.scalars(select(PaymentMethod).where(PaymentMethod.user_id == user_id, PaymentMethod.deleted_at.is_(None)))}
     count = 0
     for item in prepared:
         if item.category_name not in categories:
@@ -367,6 +372,7 @@ def _persist(database: Session, prepared: list[PreparedExpense]) -> int:
             installment_count=len(item.amounts), first_installment_date=item.expense_date,
             category_id=categories[item.category_name],
             payment_method_id=methods[item.payment_method_name],
+            user_id=user_id,
         )
         database.add(expense)
         database.flush()
@@ -376,7 +382,7 @@ def _persist(database: Session, prepared: list[PreparedExpense]) -> int:
                 due_date=_month_offset(item.expense_date, number - 1),
             ))
         for source in item.sources:
-            database.add(ExpenseImportSource(source_key=source.source_key, expense_id=expense.id))
+            database.add(ExpenseImportSource(source_key=source.source_key, expense_id=expense.id, user_id=user_id))
         count += 1
     database.commit()
     return count
@@ -386,11 +392,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="*", help="Planilhas mensais .xlsx")
     parser.add_argument("--apply", action="store_true", help="Grava após mostrar a prévia.")
+    parser.add_argument("--user-id", required=True, type=UUID, help="UUID da conta que receberá as despesas")
     args = parser.parse_args()
     paths = _paths(args.files)
     rows, read_issues, subscriptions, nonpositive, ignored_categories = _read(paths)
     with SessionLocal() as database:
-        categories = list(database.scalars(select(Category.name)))
+        user = database.get(User, args.user_id)
+        if user is None:
+            raise SystemExit(f"Usuário não encontrado: {args.user_id}")
+        categories = list(database.scalars(select(Category.name).where(Category.user_id == user.id, Category.deleted_at.is_(None))))
         oldest_month = min(_month(path) for path in paths)
         prepared, prepare_issues, estimates, ignored_later = _prepare(rows, categories, oldest_month)
         issues = read_issues + prepare_issues
@@ -401,7 +411,7 @@ def main():
         if issues:
             raise SystemExit("Importação cancelada. Resolva as pendências listadas.")
         try:
-            count = _persist(database, prepared)
+            count = _persist(database, prepared, user.id)
         except Exception:
             database.rollback()
             raise
