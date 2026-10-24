@@ -46,6 +46,14 @@ export function AuthProvider({ children }) {
     return session.user;
   }, []);
 
+  const completeGoogleSignIn = useCallback(async () => {
+    const session = await api.refreshSession({ force: true });
+    setAccessToken(session.access_token);
+    setUser(session.user);
+    setStatus('authenticated');
+    return session.user;
+  }, []);
+
   const signOut = useCallback(async () => {
     try { await api.logout(); } catch { /* A saída local deve funcionar mesmo sem a API. */ } finally {
       clearAccessToken();
@@ -54,7 +62,7 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const value = useMemo(() => ({ user, status, signIn, signUp, signOut }), [user, status, signIn, signUp, signOut]);
+  const value = useMemo(() => ({ user, status, signIn, signUp, completeGoogleSignIn, signOut }), [user, status, signIn, signUp, completeGoogleSignIn, signOut]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

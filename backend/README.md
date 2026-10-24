@@ -31,7 +31,7 @@ O seeder pode ser executado novamente; ele insere apenas os nomes ausentes.
 
 ## Autenticação e chaves
 
-Todas as rotas de negócio exigem `Authorization: Bearer <access_token>`. Contas podem ser criadas por e-mail e senha; senha tem no mínimo 12 caracteres e é armazenada como hash Argon2id. Access tokens JWT RS256 duram 15 minutos. O refresh token rotativo é enviado somente em cookie `HttpOnly`, `SameSite=Lax`; em produção, defina `AUTH_COOKIE_SECURE=true` e use HTTPS. O cookie usa `AUTH_COOKIE_PATH=/api/auth`, que corresponde ao proxy `/api` do Vite. Ajuste o caminho se a API pública usar outro prefixo.
+Todas as rotas de negócio exigem `Authorization: Bearer <access_token>`. A conta pode ser criada com e-mail e senha ou na primeira autenticação Google. Senhas têm no mínimo 12 caracteres e são armazenadas como hash Argon2id. Access tokens JWT RS256 duram 15 minutos. O refresh token rotativo é enviado somente em cookie `HttpOnly`, `SameSite=Lax`; em produção, defina `AUTH_COOKIE_SECURE=true` e use HTTPS. O cookie usa `AUTH_COOKIE_PATH=/api/auth`, que corresponde ao proxy `/api` do Vite. Ajuste o caminho se a API pública usar outro prefixo.
 
 Gere valores diferentes para `AUTH_ENCRYPTION_KEY`, `AUTH_LOOKUP_KEY` e `AUTH_TOKEN_SECRET`, com o comando abaixo três vezes no PowerShell, e copie cada saída para o `.env`:
 
@@ -52,7 +52,11 @@ openssl pkey -in jwt-private.pem -pubout -out jwt-public.pem
 
 Copie as duas saídas para `AUTH_JWT_PRIVATE_KEY_B64` e `AUTH_JWT_PUBLIC_KEY_B64`. A chave privada deve ficar somente no backend. Não a coloque em `VITE_` nem no repositório.
 
-O botão Google fica habilitado pela rota `/auth/google/start` quando `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI` estiverem configurados. No desenvolvimento com Vite, registre `http://localhost:5173/api/auth/google/callback` como URL de redirecionamento autorizada no Google Cloud Console. O callback usa Authorization Code, `state`, `nonce` e PKCE e valida a assinatura/claims do ID token.
+O botão Google fica habilitado pela rota `/auth/google/start` quando `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` e `GOOGLE_REDIRECT_URI` estiverem configurados. No desenvolvimento com Vite, registre `http://localhost:5173/api/auth/google/callback` como URL de redirecionamento autorizada no Google Cloud Console. O fluxo usa Authorization Code com PKCE, `state` e `nonce`; o backend valida a assinatura e as claims do ID token. O botão abre uma janela auxiliar e, se o navegador bloqueá-la, a tela oferece continuar na mesma aba. O resultado é enviado à janela principal sem tokens; a sessão é recuperada pelo cookie de refresh `HttpOnly`.
+
+No desenvolvimento local, `iniciar.ps1` desativa o access log do Uvicorn para não registrar o código OAuth e o `state` recebidos na URL de callback.
+
+Se um e-mail Google corresponder a uma conta local existente, o vínculo automático só é permitido para Gmail ou para um domínio Workspace confirmado pelo Google. Para outros domínios, a pessoa pode continuar usando e-mail e senha; o vínculo da identidade Google exige suporte para evitar associação indevida.
 
 As contas podem ver, cadastrar, editar e excluir os mesmos gastos e entradas nesta versão. As tabelas de negócio ainda não têm `user_id`.
 

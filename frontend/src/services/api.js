@@ -87,7 +87,10 @@ async function request(path, { signal, method = 'GET', body, skipAuth = false, r
   return responseBody;
 }
 
-async function refreshAccessToken() {
+async function refreshAccessToken({ force = false } = {}) {
+  if (force && refreshRequest) {
+    try { await refreshRequest; } catch { /* A conclusão OAuth usa o cookie recém-definido. */ }
+  }
   if (!refreshRequest) {
     refreshRequest = request('/auth/refresh', { method: 'POST', skipAuth: true, retryAuth: false })
       .then((result) => {
@@ -102,10 +105,13 @@ async function refreshAccessToken() {
 export const api = {
   register: (credentials) => request('/auth/register', { method: 'POST', body: credentials, skipAuth: true, retryAuth: false }),
   login: (credentials) => request('/auth/login', { method: 'POST', body: credentials, skipAuth: true, retryAuth: false }),
-  refreshSession: () => refreshAccessToken(),
+  refreshSession: (options) => refreshAccessToken(options),
   logout: () => request('/auth/logout', { method: 'POST', skipAuth: true, retryAuth: false }),
   googleLoginEnabled: () => request('/auth/google/status', { skipAuth: true, retryAuth: false }),
-  startGoogleLogin: () => { window.location.assign(`${API_BASE_URL}/auth/google/start`); },
+  googleLoginUrl: ({ mode = 'popup', requestId, next } = {}) => {
+    const params = new URLSearchParams({ mode, request_id: requestId, next });
+    return `${API_BASE_URL}/auth/google/start?${params}`;
+  },
   getCategories: (signal) => request('/categories', { signal }),
   getPaymentMethods: (signal) => request('/payment-methods', { signal }),
   getIncomeCategories: (signal) => request('/income-categories', { signal }),

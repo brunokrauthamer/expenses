@@ -1,6 +1,6 @@
 # Contexto do projeto Expenses
 
-Atualizado em 22/10/2026. Este documento resume decisões e o estado observado. Em novos chats, confira o código, o Git e as migrações antes de assumir que nada mudou.
+Atualizado em 24/10/2026. Este documento resume decisões e o estado observado. Em novos chats, confira o código, o Git e as migrações antes de assumir que nada mudou.
 
 ## Objetivo e preferências
 
@@ -96,6 +96,14 @@ Implementada em 22/10/2026. A migração Alembic `20261022_0007` cria `users`, `
 
 Todas as rotas de negócio exigem Bearer válido. Nesta primeira fase, as contas compartilham despesas, entradas, categorias e meios de pagamento. O frontend oferece `/entrar` e `/cadastro`. O fluxo Google usa Authorization Code com `state`, `nonce` e PKCE e só fica disponível depois de configurar as credenciais OAuth no backend. As chaves de criptografia e JWT precisam ser criadas e mantidas fora do Git; veja `backend/README.md`. A migração `20261022_0007` foi aplicada ao PostgreSQL local.
 
+### Comparação das implementações Google (24/10/2026)
+
+`master` oferece cadastro e login por e-mail/senha e login Google por redirecionamento na mesma aba. O Google usa Authorization Code com PKCE, `state`, `nonce` e validação do ID token no backend. `feat/google-only-login` parte de `master`, remove os endpoints e a interface de senha/cadastro, e mantém Google como única forma de login. A branch adiciona conclusão por popup com validação de origem/janela/identificador, tratamento de erros, destinos internos permitidos e controle mais estrito de vínculo por e-mail: associação automática apenas para Gmail ou domínio Workspace indicado pelo Google.
+
+As duas branches usam o mesmo protocolo OAuth principal; a diferença relevante é o tratamento de estado, erros e conclusão da sessão. A abordagem escolhida para combinar é manter as melhorias Google de `feat/google-only-login` e restaurar o cadastro/login local de `master`. A branch local `feat/google-and-local-login`, criada a partir de `master`, mantém `POST /auth/register`, `POST /auth/login`, hashes Argon2id e as telas `/entrar` e `/cadastro`; Google usa callback de conclusão separado, popup com envio apenas do resultado (sem tokens), sessão via cookie de refresh `HttpOnly` e fallback por redirecionamento na mesma aba. O destino de retorno é limitado às rotas internas do aplicativo.
+
+Na branch combinada, `.gitignore` também exclui `client_secret_*.json`; o inicializador abre a aplicação em `http://localhost:5173` e inicia o Uvicorn sem access log para não registrar `code` e `state` do callback. A suíte de testes não foi executada durante esta implementação. Os logs locais `frontend/vite.log` e `frontend/vite-error.log` permanecem não rastreados e intactos.
+
 ## Execução local
 
 No primeiro uso, inicie o PostgreSQL, configure o backend e execute `python -m app.seed` a partir de `backend` para inserir as categorias e os meios de pagamento iniciais. Mantenha o FastAPI em execução enquanto usa a interface. Em seguida, a partir de `frontend`, com Node.js 20.19+ ou 22.12+ e pnpm:
@@ -132,9 +140,9 @@ Os testes usam SQLite em memória, não o PostgreSQL local. Em 22/10/2026, os 36
 
 Frontend e backend ficam no mesmo repositório Git. O repositório GitHub `brunokrauthamer/expenses` foi criado pelo usuário e o remoto `origin` aponta para `https://github.com/brunokrauthamer/expenses.git`. O commit inicial `65e1b5c` (`Initial commit`) foi enviado para `master`.
 
-A identidade usada no commit veio do perfil GitHub conectado: Bruno Krauthamer (`brunokrauthamer@gmail.com`). Ela foi configurada localmente neste repositório. Os ajustes de layout de 19/10/2026 estão na branch local `feat/viewport-layout`, criada a partir de `master`, sem commit ou push nesta etapa. Confirme a branch e o estado de trabalho antes de agir. O Git está disponível por `C:/Program Files/Git/cmd/git.exe`, mesmo quando ausente do PATH. Futuras melhorias devem usar branches separadas e PRs para `master`. Não há necessidade de branches principais `dev`, `qa` ou `staging`.
+A identidade usada no commit veio do perfil GitHub conectado: Bruno Krauthamer (`brunokrauthamer@gmail.com`). Ela foi configurada localmente neste repositório. Os ajustes de layout de 19/10/2026 estão na branch local `feat/viewport-layout`, criada a partir de `master`. Em 24/10/2026, foi criada `feat/google-and-local-login` a partir de `master` para combinar login local e Google. Confirme a branch e o estado de trabalho antes de agir. O Git está disponível por `C:/Program Files/Git/cmd/git.exe`, mesmo quando ausente do PATH. Futuras melhorias devem usar branches separadas e PRs para `master`. Não há necessidade de branches principais `dev`, `qa` ou `staging`.
 
 O primeiro push falhou sob a rede restrita do ambiente e foi concluído após autorização de rede. Se um push futuro falhar por conectividade, verificar a rede/autenticação GitHub e repetir com o acesso apropriado. A integração GitHub disponível no chat pode consultar recursos, mas não oferece criação de repositórios. Navegador e GitHub CLI não estavam disponíveis naquela sessão.
 
-Antes de qualquer commit, revise os arquivos staged e assegure que segredos, ambiente virtual, dependências instaladas e arquivos gerados permanecem excluídos. O `.gitignore` cobre `.env`, ambientes virtuais, `node_modules`, builds, caches Python e cobertura.
+Antes de qualquer commit, revise os arquivos staged e assegure que segredos, ambiente virtual, dependências instaladas e arquivos gerados permanecem excluídos. O `.gitignore` cobre `.env`, arquivos `client_secret_*.json`, ambientes virtuais, `node_modules`, builds, caches Python e cobertura.
 
