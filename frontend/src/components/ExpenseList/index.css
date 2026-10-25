@@ -1,0 +1,357 @@
+.list-heading {
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.count-badge {
+  display: grid;
+  min-width: 25px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  margin-left: auto;
+  padding: 0 7px;
+  border-radius: 7px;
+  background: #f1f1f8;
+  color: #747b91;
+  font-size: 10px;
+  font-weight: 600;
+}
+.monthly-payment-total {
+  flex: 0 0 auto;
+  color: #2f695b;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.expense-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+.expense-list.list-updating {
+  opacity: 0.6;
+}
+.expense-item {
+  display: flex;
+  min-height: 61px;
+  align-items: center;
+  gap: 9px;
+  border-top: 1px solid #f0f0f5;
+  animation: item-enter 0.24s ease both;
+}
+.expense-symbol {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border-radius: 10px;
+  background: #f1f0ff;
+  color: #6859c8;
+  font-size: 11px;
+  font-weight: 700;
+}
+.expense-details {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 4px;
+}
+.expense-details strong {
+  overflow: hidden;
+  color: #364058;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.expense-details > span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: #8d93a6;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.expense-details i {
+  color: #a1a6b4;
+  font-style: normal;
+  white-space: nowrap;
+}
+.expense-amount {
+  flex: 0 0 auto;
+  color: #4a3da1;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.delete-button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  place-items: center;
+  margin-left: 1px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #989eaf;
+  cursor: pointer;
+  font-size: 18px;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease;
+}
+.delete-button:hover:not(:disabled) {
+  background: #fff0f1;
+  color: #ba5261;
+}
+.delete-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+@keyframes item-enter {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 480px) {
+  .expense-item {
+    gap: 7px;
+  }
+  .expense-details strong {
+    max-width: 150px;
+  }
+  .expense-amount {
+    font-size: 10px;
+  }
+  .delete-button {
+    width: 23px;
+    flex-basis: 23px;
+  }
+}
+.expense-list {
+  display: grid;
+}
+.expense-item {
+  min-height: 70px;
+  gap: 11px;
+  border-color: #edf0f3;
+}
+.expense-symbol {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--category-color) 12%, white);
+  color: var(--category-color);
+  font-size: 12px;
+}
+.expense-details strong {
+  color: #263244;
+  font-size: 13px;
+}
+.expense-details > span {
+  gap: 6px;
+  color: #667085;
+  font-size: 11px;
+}
+.expense-details i {
+  color: #8993a3;
+}
+.expense-amount {
+  color: #263244;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.expense-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+.icon-button {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #667085;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease;
+}
+.icon-button:hover:not(:disabled) {
+  border-color: #e4e7ec;
+  background: #f8f8fb;
+  color: var(--accent-dark);
+}
+.delete-button:hover:not(:disabled) {
+  border-color: #f1d8dc;
+  background: #fff4f5;
+  color: var(--danger);
+}
+.icon-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.count-badge {
+  min-width: 29px;
+  height: 27px;
+  border-radius: 9px;
+  font-size: 11px;
+}
+
+@media (max-width: 480px) {
+  .expense-item {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-areas: 'symbol details amount' 'symbol details actions';
+    align-items: center;
+    gap: 2px 9px;
+    padding-block: 8px;
+  }
+  .expense-symbol {
+    grid-area: symbol;
+  }
+  .expense-details {
+    grid-area: details;
+  }
+  .expense-details strong {
+    max-width: none;
+  }
+  .expense-details > span {
+    max-width: 100%;
+    flex-wrap: wrap;
+    font-size: 10px;
+    white-space: normal;
+  }
+  .expense-amount {
+    grid-area: amount;
+    justify-self: end;
+    font-size: 12px;
+  }
+  .expense-actions {
+    grid-area: actions;
+    justify-self: end;
+  }
+  .icon-button {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+}
+
+.list-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 5px 10px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+.list-heading .step-number {
+  grid-row: 1 / 3;
+}
+.list-heading-copy {
+  min-width: 0;
+}
+.list-heading-copy p {
+  margin-top: 3px;
+}
+.monthly-payment-total {
+  grid-column: 2;
+  color: var(--accent-dark);
+  font-size: 20px;
+  letter-spacing: -0.5px;
+}
+.list-heading .count-badge {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: center;
+}
+.expense-list {
+  flex: 1;
+  align-content: start;
+  margin: 0 -5px;
+  padding: 0 5px;
+}
+.expense-item {
+  min-height: 72px;
+}
+.expense-details > span {
+  flex-wrap: wrap;
+  row-gap: 3px;
+  white-space: normal;
+}
+.reimbursement-amount {
+  color: #8b5660;
+}
+
+@media (min-width: 701px) and (max-width: 1100px) {
+  .expense-item {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-block: 10px;
+  }
+  .expense-details {
+    flex-basis: calc(100% - 48px);
+  }
+  .expense-amount {
+    margin-left: 44px;
+  }
+  .expense-actions {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 700px) {
+  .expense-item {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    grid-template-areas: 'symbol details amount' 'symbol details actions';
+    gap: 3px 8px;
+    padding-block: 10px;
+  }
+  .expense-symbol {
+    grid-area: symbol;
+    width: 32px;
+    height: 32px;
+  }
+  .expense-details {
+    grid-area: details;
+  }
+  .expense-details strong {
+    max-width: none;
+  }
+  .expense-details > span {
+    gap: 3px 5px;
+    font-size: 10px;
+  }
+  .expense-amount {
+    grid-area: amount;
+    justify-self: end;
+    font-size: 12px;
+  }
+  .expense-actions {
+    grid-area: actions;
+    justify-self: end;
+  }
+  .icon-button {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+}

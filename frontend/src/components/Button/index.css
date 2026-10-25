@@ -1,0 +1,127 @@
+.button {
+  font: inherit;
+  cursor: pointer;
+}
+.button:disabled {
+  cursor: not-allowed;
+}
+.button:focus-visible {
+  outline: 3px solid #7366cf66;
+  outline-offset: 2px;
+}
+.button--primary {
+  border: 0;
+  background: linear-gradient(110deg, #5546c8, #6d5bd1);
+  color: #fff;
+}
+.button--secondary {
+  border: 1px solid #d9dee7;
+  background: #fff;
+  color: #465164;
+}
+.button--danger {
+  border: 1px solid #a23f50;
+  background: #a23f50;
+  color: #fff;
+}
+.button--text {
+  border: 0;
+  background: transparent;
+  color: #6a5bc8;
+}
+.button--small {
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+.button--medium {
+  min-height: 40px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+.button--large {
+  min-height: 46px;
+  padding: 0 15px;
+  font-size: 13px;
+}
+.button__content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.submit-button {
+  display: flex;
+  min-height: 43px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: linear-gradient(110deg, #5546c8, #6d5bd1);
+  box-shadow: 0 7px 15px #5546c82b;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    filter 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+}
+.submit-button:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 10px 20px #5546c83a;
+  transform: translateY(-1px);
+}
+.submit-button:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.submit-button:disabled {
+  cursor: wait;
+  opacity: 0.76;
+}
+.submit-button span:last-child {
+  color: #f0edff;
+  font-size: 16px;
+}
+.text-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6556c8;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.text-button:hover {
+  color: #40357f;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.text-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.submit-button {
+  min-height: 48px;
+  padding-inline: 16px;
+  border-radius: 10px;
+  background: var(--accent);
+  box-shadow: 0 5px 12px #5144b825;
+  font-size: 13px;
+}
+.submit-button:hover:not(:disabled) {
+  background: var(--accent-dark);
+  filter: none;
+  box-shadow: 0 8px 16px #5144b82c;
+}
+.submit-button svg {
+  flex: 0 0 auto;
+}
+.text-button {
+  color: var(--accent-dark);
+  font-size: 12px;
+}

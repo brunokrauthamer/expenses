@@ -1,0 +1,27 @@
+.route-loading {
+  display: grid;
+  min-height: 330px;
+  place-items: center;
+  color: #747b91;
+  font-size: 12px;
+}
+.route-error {
+  display: grid;
+  justify-items: start;
+  gap: 13px;
+  margin: 48px 0;
+}
+.route-error h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(23px, 3vw, 34px);
+}
+
+.route-loading {
+  min-height: 0;
+  height: 100%;
+}
+.route-error {
+  overflow: auto;
+  margin: 20px 0;
+}

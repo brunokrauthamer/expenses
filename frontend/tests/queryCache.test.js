@@ -22,7 +22,7 @@ const {
   clearQueryCache,
   getCachedQuerySnapshot,
   subscribeToCachedQuery,
-} = await import('../src/shared/queryCache.js');
+} = await import('../src/store/queryCache.js');
 
 test.afterEach(() => {
   clearQueryCache();

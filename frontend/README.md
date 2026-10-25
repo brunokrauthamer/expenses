@@ -4,7 +4,7 @@ Aplicação pessoal para registrar compras, consultar as compras recentes e acom
 
 ## Requisitos
 
-- Node.js 20.19+ ou 22.12+
+- Node.js ^22.22.2, ^24.15.0 ou >=26.0.0, conforme as engines das dependências de desenvolvimento
 - pnpm
 - Backend e PostgreSQL configurados conforme `../backend/README.md`
 
@@ -36,3 +36,28 @@ As rotas públicas de autenticação são `/entrar` e `/cadastro`; ambas oferece
 As rotas de negócio são `/despesas`, `/gastos`, `/consolidado` e `/configuracoes`. Em Configurações, cada pessoa pode adicionar, renomear e excluir categorias de despesas, categorias de entradas e meios de pagamento. Excluídos deixam de aparecer em novos lançamentos e continuam identificados no histórico, nos filtros e nos relatórios. A rota `/gastos` mostra cobranças e reembolsos numa lista única, ordenada por data do evento; os reembolsos aparecem negativos e em vermelho. O resumo traz valores brutos, reembolsos e líquido. É possível filtrar por categoria, meio de pagamento e busca; filtros e página ficam na URL. O filtro por meio de pagamento afeta apenas cobranças. Os filtros do consolidado também ficam na URL e podem ser preservados ao recarregar a página. As referências e os resultados são mantidos em cache local por até 30 minutos e 2 minutos, respectivamente; o cache é separado por conta e limpo ao encerrar ou trocar a sessão.
 
 Para gerar uma versão de produção, execute `pnpm build`. Os arquivos gerados ficam em `dist/`. A hospedagem deve redirecionar rotas da aplicação, como `/despesas`, `/gastos` e `/consolidado`, para `index.html`.
+
+## Organização do frontend
+
+- `src/main.jsx` monta o React e carrega os estilos globais; `src/App.jsx` compõe autenticação, rotas e layout.
+- `src/pages/` contém a composição e os componentes exclusivos de cada rota. Páginas não importam outras páginas.
+- `src/components/` contém controles compartilhados e componentes de negócio usados por mais de uma tela. Estilos exclusivos ficam junto do componente ou da página.
+- `src/services/` concentra o cliente HTTP e operações por domínio. `src/store/` mantém sessão, navegação, cache, consultas e invalidação.
+- `src/shared/` guarda transformações e políticas puras sem dependência da interface ou do transporte.
+- `src/index.css` define tokens, base, foco, movimento reduzido e importa os estilos compartilhados. Estilos de componentes e páginas ficam junto de seus responsáveis, incluindo regras responsivas.
+
+## Verificações do frontend
+
+Execute dentro de `frontend`:
+
+```powershell
+pnpm test
+pnpm test:unit
+pnpm test:dom
+pnpm lint
+pnpm format:check
+pnpm format
+pnpm build
+```
+
+`pnpm test` executa as suítes unitárias e de DOM. `pnpm test:unit` usa `node --test` para regras puras, cache e contratos de marcação via SSR. `pnpm test:dom` usa Vitest, jsdom e Testing Library para verificar interações de controles React. `pnpm lint` aplica ESLint com as regras de hooks do React. `pnpm format:check` verifica o formato com Prettier; `pnpm format` formata os arquivos da aplicação.

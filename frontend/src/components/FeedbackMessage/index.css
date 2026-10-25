@@ -1,0 +1,22 @@
+.feedback-message--error {
+  color: var(--danger);
+}
+.feedback-message--success {
+  color: var(--success);
+}
+
+.form-message {
+  margin: 0;
+  color: #717990;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.error-message {
+  color: var(--danger);
+}
+.success-message {
+  color: var(--success);
+}
+.form-message {
+  font-size: 12px;
+}

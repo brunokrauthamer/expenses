@@ -1,0 +1,104 @@
+.content-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  align-items: stretch;
+  gap: 18px;
+}
+.form-panel,
+.list-panel {
+  animation: panel-enter 0.46s ease both;
+}
+.list-panel {
+  animation-delay: 0.06s;
+}
+
+@media (max-width: 700px) {
+  .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .content-grid {
+    gap: 14px;
+  }
+}
+.content-grid {
+  gap: 20px;
+}
+.form-panel {
+  transition:
+    background-color 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+}
+.form-panel.is-editing {
+  border-color: #bcb5e8;
+  background: #f8f7ff;
+  box-shadow:
+    0 10px 26px #5144b812,
+    inset 3px 0 #6556c8;
+}
+.form-panel.is-editing .step-number {
+  background: #e9e6fb;
+  color: #3d348c;
+}
+
+.content-grid {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+  gap: 18px;
+  padding: 0;
+}
+.content-grid {
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+}
+.form-panel,
+.list-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.monthly-income-section,
+.monthly-payments-section {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.monthly-income-section {
+  flex: 3 1 0;
+}
+.monthly-payments-section {
+  flex: 7 1 0;
+}
+.monthly-income-section > .form-message,
+.monthly-payments-section > .form-message,
+.monthly-payments-section > .query-state {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+}
+.monthly-income-section > .empty-state,
+.monthly-payments-section > .empty-state {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (min-width: 701px) and (max-width: 1100px) {
+  .content-grid {
+    gap: 14px;
+  }
+  .content-grid {
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  }
+}
+
+@media (max-width: 700px) {
+  .content-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 0;
+  }
+  .content-grid[data-active-section='form'] > .list-panel,
+  .content-grid[data-active-section='payments'] > .form-panel {
+    display: none;
+  }
+}
