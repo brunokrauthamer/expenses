@@ -11,7 +11,9 @@ def _key(name: str) -> bytes:
     try:
         decoded = base64.b64decode(value, validate=True)
     except (ValueError, TypeError) as error:
-        raise RuntimeError(f"Configure {name} como uma chave Base64 aleatÃ³ria de 32 bytes.") from error
+        raise RuntimeError(
+            f"Configure {name} como uma chave Base64 aleatÃ³ria de 32 bytes."
+        ) from error
     if len(decoded) != 32:
         raise RuntimeError(f"Configure {name} como uma chave Base64 aleatÃ³ria de 32 bytes.")
     return decoded
@@ -25,7 +27,9 @@ def encrypt_personal_data(value: str) -> bytes:
     key_name = f"AUTH_ENCRYPTION_KEY_V{version}"
     if version == 1 and not os.getenv(key_name):
         key_name = "AUTH_ENCRYPTION_KEY"
-    ciphertext = AESGCM(_key(key_name)).encrypt(nonce, value.encode("utf-8"), f"expenses:user:v{version}".encode())
+    ciphertext = AESGCM(_key(key_name)).encrypt(
+        nonce, value.encode("utf-8"), f"expenses:user:v{version}".encode()
+    )
     return bytes([version]) + nonce + ciphertext
 
 
@@ -35,13 +39,21 @@ def decrypt_personal_data(value: bytes) -> str:
     if version == 1 and not os.getenv(key_name):
         key_name = "AUTH_ENCRYPTION_KEY"
     nonce, ciphertext = value[1:13], value[13:]
-    return AESGCM(_key(key_name)).decrypt(nonce, ciphertext, f"expenses:user:v{version}".encode()).decode("utf-8")
+    return (
+        AESGCM(_key(key_name))
+        .decrypt(nonce, ciphertext, f"expenses:user:v{version}".encode())
+        .decode("utf-8")
+    )
 
 
 def lookup_digest(value: str, *, namespace: str = "email") -> str:
     normalized = value.strip().casefold()
-    return hmac.new(_key("AUTH_LOOKUP_KEY"), f"{namespace}:{normalized}".encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(
+        _key("AUTH_LOOKUP_KEY"), f"{namespace}:{normalized}".encode("utf-8"), hashlib.sha256
+    ).hexdigest()
 
 
 def token_digest(token: str) -> str:
-    return hmac.new(_key("AUTH_LOOKUP_KEY"), f"refresh:{token}".encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(
+        _key("AUTH_LOOKUP_KEY"), f"refresh:{token}".encode("utf-8"), hashlib.sha256
+    ).hexdigest()

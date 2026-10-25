@@ -4,14 +4,19 @@ O backend usa FastAPI, SQLAlchemy, Alembic e PostgreSQL. A API oferece cadastro,
 
 ## Organização
 
-O projeto é um monólito modular. Cada domínio fica em `app/modules/` e separa:
+O projeto é um monólito modular. Cada domínio fica em `app/modules/` e usa os arquivos necessários à sua responsabilidade:
 
-- `model.py`: representação das tabelas pelo SQLAlchemy;
-- `schema.py`: contratos de entrada e saída da API;
-- `service.py`: regras e consultas do domínio;
-- `controller.py`: rotas HTTP do domínio.
+- `controller.py`: rotas HTTP, validação do protocolo e mapeamento de erros/respostas;
+- `schema.py`: contratos externos de entrada e saída da API;
+- `service.py`: casos de uso, políticas de domínio e coordenação da transação;
+- `repository.py`: consultas, gravações e adaptação dos resultados do SQLAlchemy;
+- `model.py`: entidades ORM e metadados persistidos;
+- `dependencies.py`: composição de serviços com repositórios, `UnitOfWork` e dependências HTTP;
+- `contracts.py` e `rules.py`: comandos/resultados do caso de uso e regras puras, quando necessários.
 
-Os módulos existentes incluem `auth`, `categories`, `expenses`, `income_entries` e `payment_methods`. Código compartilhado fica em `app/shared/`; conexão e configuração ficam na raiz de `app/`.
+`repository.py`, `contracts.py` e `rules.py` não são exigidos em todos os módulos. Controllers recebem a identidade da conta como UUID e não manipulam `Session` nem entidades ORM. Services dependem de contratos de repositório e do `UnitOfWork`; repositórios fazem flush, mas não confirmam a transação. `atomic()` concentra commit/rollback no caso de uso. Código compartilhado fica em `app/shared/`; conexão e configuração ficam na raiz de `app/`.
+
+Os módulos existentes incluem `auth`, `categories`, `expenses`, `income_entries` e `payment_methods`. Em autenticação, `auth/oauth.py` adapta o provedor Google, `auth/tokens.py` concentra tokens JWT, `auth/service.py` aplica políticas de conta e sessão e `auth/dependencies.py` protege a borda HTTP. O caminho de reutilização/expiração do refresh token confirma a revogação antes de responder com erro.
 
 ## Configuração
 
@@ -124,7 +129,17 @@ Instale as dependências de desenvolvimento e execute os testes a partir da past
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest -m unit
+.\.venv\Scripts\python.exe -m pytest -m integration
 .\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\ruff.exe check app tests
 ```
 
-Os testes da API usam SQLite em memória; não criam, alteram ou removem dados do PostgreSQL local.
+Os testes unitários usam colaboradores simulados e não inicializam a aplicação nem leem `.env`. Os testes de API/persistência usam SQLite em memória com chaves estrangeiras habilitadas; não criam, alteram ou removem dados do PostgreSQL local. `pytest-cov`, `coverage.py` e Ruff são dependências de desenvolvimento; a configuração fica em `pyproject.toml`.
+
+Para medir unitários sem misturar a cobertura da integração, escolha um arquivo de dados que ainda não exista (e preserve qualquer `.coverage` existente):
+
+```powershell
+.\.venv\Scripts\python.exe -m coverage run --data-file=.coverage.unit --branch --source=app -m pytest -m unit
+.\.venv\Scripts\python.exe -m coverage report --data-file=.coverage.unit -m
+```

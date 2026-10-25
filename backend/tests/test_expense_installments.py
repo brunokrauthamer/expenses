@@ -2,13 +2,12 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-
 from app.modules.categories.model import Category
 from app.modules.expenses.model import Expense, ExpenseInstallment
 from app.modules.payment_methods.model import PaymentMethod
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 
 def create_references(database: Session) -> tuple[Category, PaymentMethod]:
@@ -101,8 +100,11 @@ def test_monthly_read_returns_only_the_charge_due_in_that_month(
     assert created.status_code == 201
     assert november["total"] == december["total"] == january["total"] == 1
     assert february["total"] == 0
-    assert [november["items"][0]["due_date"], december["items"][0]["due_date"],
-            january["items"][0]["due_date"]] == ["2026-11-30", "2026-12-30", "2027-01-30"]
+    assert [
+        november["items"][0]["due_date"],
+        december["items"][0]["due_date"],
+        january["items"][0]["due_date"],
+    ] == ["2026-11-30", "2026-12-30", "2027-01-30"]
     for number, month_data in enumerate((november, december, january), start=1):
         item = month_data["items"][0]
         assert item["id"] == expense_id
@@ -140,10 +142,14 @@ def test_first_installment_receives_remainder_and_dates_keep_original_day(
 
     assert response.status_code == 201
     assert [row.amount for row in installments] == [
-        Decimal("33.35"), Decimal("33.33"), Decimal("33.33")
+        Decimal("33.35"),
+        Decimal("33.33"),
+        Decimal("33.33"),
     ]
     assert [row.due_date for row in installments] == [
-        date(2026, 1, 31), date(2026, 2, 28), date(2026, 3, 31)
+        date(2026, 1, 31),
+        date(2026, 2, 28),
+        date(2026, 3, 31),
     ]
     assert sum((row.amount for row in installments), Decimal("0.00")) == Decimal("100.01")
 
@@ -183,9 +189,7 @@ def test_1300_over_seven_uses_185_71_for_later_installments(
     assert sum((row.amount for row in installments), Decimal("0.00")) == Decimal("1300.00")
 
 
-def test_installment_dates_handle_leap_years(
-    client: TestClient, database: Session
-) -> None:
+def test_installment_dates_handle_leap_years(client: TestClient, database: Session) -> None:
     category, payment_method = create_references(database)
     response = client.post(
         "/expenses",
@@ -208,7 +212,9 @@ def test_installment_dates_handle_leap_years(
 
     assert response.status_code == 201
     assert [row.due_date for row in installments] == [
-        date(2028, 1, 31), date(2028, 2, 29), date(2028, 3, 31)
+        date(2028, 1, 31),
+        date(2028, 2, 29),
+        date(2028, 3, 31),
     ]
 
 
@@ -220,12 +226,22 @@ def test_installment_dates_handle_leap_years(
         {"payment_type": "one_time", "amount_type": "installment"},
         {"payment_type": "installments", "installment_count": 3, "amount": "0.02"},
         {"payment_type": "installments", "installment_count": 1201},
-        {"payment_type": "installments", "installment_count": 2,
-         "amount_type": "installment", "amount": "9999999999.99"},
-        {"payment_type": "installments", "installment_count": 2,
-         "first_installment_date": "2026-10-17"},
-        {"payment_type": "installments", "installment_count": 2,
-         "first_installment_date": "9999-12-31"},
+        {
+            "payment_type": "installments",
+            "installment_count": 2,
+            "amount_type": "installment",
+            "amount": "9999999999.99",
+        },
+        {
+            "payment_type": "installments",
+            "installment_count": 2,
+            "first_installment_date": "2026-10-17",
+        },
+        {
+            "payment_type": "installments",
+            "installment_count": 2,
+            "first_installment_date": "9999-12-31",
+        },
     ],
 )
 def test_invalid_installment_combinations_return_422(
@@ -247,8 +263,10 @@ def test_updating_description_preserves_the_installment_schedule(
     created = client.post(
         "/expenses",
         json=expense_payload(
-            category.id, payment_method.id,
-            payment_type="installments", installment_count=3,
+            category.id,
+            payment_method.id,
+            payment_type="installments",
+            installment_count=3,
             first_installment_date="2026-11-10",
         ),
     )
@@ -264,8 +282,11 @@ def test_updating_description_preserves_the_installment_schedule(
     updated = client.put(
         f"/expenses/{expense_id}",
         json=expense_payload(
-            category.id, payment_method.id, description="Notebook atualizado",
-            payment_type="installments", installment_count=3,
+            category.id,
+            payment_method.id,
+            description="Notebook atualizado",
+            payment_type="installments",
+            installment_count=3,
             first_installment_date="2026-11-10",
         ),
     )
@@ -288,16 +309,22 @@ def test_updating_schedule_replaces_all_charges_atomically(
     category, payment_method = create_references(database)
     created = client.post(
         "/expenses",
-        json=expense_payload(category.id, payment_method.id,
-                             payment_type="installments", installment_count=6),
+        json=expense_payload(
+            category.id, payment_method.id, payment_type="installments", installment_count=6
+        ),
     )
     expense_id = created.json()["id"]
 
     updated = client.put(
         f"/expenses/{expense_id}",
-        json=expense_payload(category.id, payment_method.id, amount="1000.00",
-                             payment_type="installments", installment_count=2,
-                             first_installment_date="2026-12-01"),
+        json=expense_payload(
+            category.id,
+            payment_method.id,
+            amount="1000.00",
+            payment_type="installments",
+            installment_count=2,
+            first_installment_date="2026-12-01",
+        ),
     )
     expense = database.get(Expense, expense_id)
     installments = list(
@@ -321,8 +348,9 @@ def test_deleting_expense_cascades_to_all_installments(
     category, payment_method = create_references(database)
     created = client.post(
         "/expenses",
-        json=expense_payload(category.id, payment_method.id,
-                             payment_type="installments", installment_count=3),
+        json=expense_payload(
+            category.id, payment_method.id, payment_type="installments", installment_count=3
+        ),
     )
     expense_id = created.json()["id"]
     assert database.query(ExpenseInstallment).filter_by(expense_id=expense_id).count() == 3
@@ -339,10 +367,16 @@ def test_pagination_counts_installments_and_one_time_expense_has_one_charge(
 ) -> None:
     category, payment_method = create_references(database)
     client.post("/expenses", json=expense_payload(category.id, payment_method.id))
-    client.post("/expenses", json=expense_payload(
-        category.id, payment_method.id, description="Celular",
-        payment_type="installments", installment_count=3,
-    ))
+    client.post(
+        "/expenses",
+        json=expense_payload(
+            category.id,
+            payment_method.id,
+            description="Celular",
+            payment_type="installments",
+            installment_count=3,
+        ),
+    )
 
     first_page = client.get("/expenses", params={"page": 1, "page_size": 2}).json()
     second_page = client.get("/expenses", params={"page": 2, "page_size": 2}).json()

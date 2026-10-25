@@ -12,26 +12,32 @@ import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Iterable
 from uuid import UUID
 
 from openpyxl import load_workbook
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
-import app.modules.registry  # noqa: F401
-from app.modules.categories.model import Category
-from app.modules.expenses.model import Expense, ExpenseImportSource, ExpenseInstallment
-from app.modules.payment_methods.model import PaymentMethod
-from app.modules.auth.model import User
-
+from app.modules.expenses.import_contracts import ImportExpenseCommand
+from app.modules.expenses.import_repository import ExpenseImportRepository
+from app.modules.expenses.import_service import ExpenseImportService
+from app.shared.exceptions import DomainValidationError
+from app.shared.sqlalchemy_uow import SqlAlchemyUnitOfWork
 
 MONTHS = {
-    "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
-    "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+    "jan": 1,
+    "fev": 2,
+    "mar": 3,
+    "abr": 4,
+    "mai": 5,
+    "jun": 6,
+    "jul": 7,
+    "ago": 8,
+    "set": 9,
+    "out": 10,
+    "nov": 11,
+    "dez": 12,
 }
 MONTH_IN_NAME = re.compile(
     r"(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)_(\d{4})",
@@ -93,9 +99,7 @@ class PreparedExpense:
 
 def _normalize(value: str) -> str:
     value = unicodedata.normalize("NFKD", value.strip().casefold())
-    return " ".join(
-        "".join(char for char in value if not unicodedata.combining(char)).split()
-    )
+    return " ".join("".join(char for char in value if not unicodedata.combining(char)).split())
 
 
 def _payment_method(value: str) -> str | None:
@@ -177,11 +181,19 @@ def _read(paths: list[Path]):
                     if installment_number < 1 or installment_count < installment_number:
                         issues.append(f"{path.name}, linha {number}: parcela inválida ({token!r}).")
                         continue
-                rows.append(SourceRow(
-                    path, number, month_date, installment_number, installment_count,
-                    str(payment).strip(), str(category).strip(),
-                    str(description).strip(), amount,
-                ))
+                rows.append(
+                    SourceRow(
+                        path,
+                        number,
+                        month_date,
+                        installment_number,
+                        installment_count,
+                        str(payment).strip(),
+                        str(category).strip(),
+                        str(description).strip(),
+                        amount,
+                    )
+                )
         finally:
             workbook.close()
     return rows, issues, subscriptions, nonpositive, ignored_category_count
@@ -212,18 +224,26 @@ def _prepare(rows: list[SourceRow], category_names: list[str], oldest_month: dat
         category = _category(row.category, category_names)
         payment = _payment_method(row.payment_method)
         if category is None:
-            issues.append(f"Categoria sem mapeamento: {row.category!r} ({row.path.name}, linha {row.row_number}).")
+            issues.append(
+                f"Categoria sem mapeamento: {row.category!r} ({row.path.name}, linha {row.row_number})."
+            )
             return
         if payment is None:
-            issues.append(f"Meio sem mapeamento: {row.payment_method!r} ({row.path.name}, linha {row.row_number}).")
+            issues.append(
+                f"Meio sem mapeamento: {row.payment_method!r} ({row.path.name}, linha {row.row_number})."
+            )
             return
         label = description or row.description
         if len(label) > 120:
-            issues.append(f"Descrição acima de 120 caracteres: {label!r} ({row.path.name}, linha {row.row_number}).")
+            issues.append(
+                f"Descrição acima de 120 caracteres: {label!r} ({row.path.name}, linha {row.row_number})."
+            )
             return
-        prepared.append(PreparedExpense(
-            label, category, payment, row.expense_date, tuple(amounts), tuple(sources), note
-        ))
+        prepared.append(
+            PreparedExpense(
+                label, category, payment, row.expense_date, tuple(amounts), tuple(sources), note
+            )
+        )
         consumed.update(source.source_key for source in sources)
 
     for row in rows:
@@ -237,7 +257,8 @@ def _prepare(rows: list[SourceRow], category_names: list[str], oldest_month: dat
         months = sorted(by_month)
         first_month = oldest_month
         legacy = [
-            row for row in by_month.get(first_month, [])
+            row
+            for row in by_month.get(first_month, [])
             if row.installment_number is not None and row.installment_number > 1
         ]
         legacy_rows = list(legacy)
@@ -250,30 +271,45 @@ def _prepare(rows: list[SourceRow], category_names: list[str], oldest_month: dat
                 expected[previous.installment_number + 1].append(previous)  # type: ignore[operator]
             for number, previous_rows in expected.items():
                 candidates = sorted(
-                    [item for item in current if item.installment_number == number
-                     and item.source_key not in consumed and item not in legacy_rows],
+                    [
+                        item
+                        for item in current
+                        if item.installment_number == number
+                        and item.source_key not in consumed
+                        and item not in legacy_rows
+                    ],
                     key=_row_order,
                 )
                 previous_rows = sorted(previous_rows, key=_row_order)
-                following.extend(candidates[:min(len(candidates), len(previous_rows))])
+                following.extend(candidates[: min(len(candidates), len(previous_rows))])
             legacy_rows.extend(following)
             active = following
 
         for row in legacy_rows:
-            add(row, (row.amount,), (row,),
-                description=f"{row.description}, parcela {row.installment_number}")
+            add(
+                row,
+                (row.amount,),
+                (row,),
+                description=f"{row.description}, parcela {row.installment_number}",
+            )
 
         first_rows = [row for row in group_rows if row.installment_number == 1]
         for row in sorted(first_rows, key=lambda item: (item.expense_date, _row_order(item))):
             next_month = _month_offset(row.expense_date, 1)
             candidates = sorted(
-                [item for item in by_month.get(next_month, [])
-                 if item.installment_number == 2 and item.source_key not in consumed],
+                [
+                    item
+                    for item in by_month.get(next_month, [])
+                    if item.installment_number == 2 and item.source_key not in consumed
+                ],
                 key=_row_order,
             )
             same_month_firsts = sorted(
-                [item for item in first_rows if item.expense_date == row.expense_date
-                 and item.source_key not in consumed],
+                [
+                    item
+                    for item in first_rows
+                    if item.expense_date == row.expense_date and item.source_key not in consumed
+                ],
                 key=_row_order,
             )
             index = same_month_firsts.index(row)
@@ -290,8 +326,10 @@ def _prepare(rows: list[SourceRow], category_names: list[str], oldest_month: dat
             add(row, amounts, sources, note=note)
 
         ignored_later += sum(
-            1 for row in group_rows
-            if row.installment_number is not None and row.installment_number >= 3
+            1
+            for row in group_rows
+            if row.installment_number is not None
+            and row.installment_number >= 3
             and row.source_key not in consumed
         )
         for row in group_rows:
@@ -308,7 +346,8 @@ def _paths(arguments: list[str]) -> list[Path]:
         result = [Path(item).expanduser().resolve() for item in arguments]
     else:
         result = [
-            item.resolve() for item in (Path.home() / "Downloads").glob("*_2026.xlsx")
+            item.resolve()
+            for item in (Path.home() / "Downloads").glob("*_2026.xlsx")
             if "gastos cartao" in _normalize(item.name)
         ]
     result.sort(key=_month)
@@ -323,9 +362,20 @@ def _paths(arguments: list[str]) -> list[Path]:
     return result
 
 
-def _preview(paths, prepared, issues, subscriptions, nonpositive, ignored_categories, estimates, ignored_later):
+def _preview(
+    paths,
+    prepared,
+    issues,
+    subscriptions,
+    nonpositive,
+    ignored_categories,
+    estimates,
+    ignored_later,
+):
     print(f"Planilhas: {len(paths)} | {paths[0].name} a {paths[-1].name}")
-    print(f"Compras: {len(prepared)} | Total: R$ {sum((item.total for item in prepared), Decimal('0.00')):.2f}")
+    print(
+        f"Compras: {len(prepared)} | Total: R$ {sum((item.total for item in prepared), Decimal('0.00')):.2f}"
+    )
     print(f"Assinaturas ignoradas: {subscriptions}")
     print(f"Valores negativos/zero ignorados: {nonpositive}")
     print(f"Categoria Empréstimo ignorada: {ignored_categories}")
@@ -345,76 +395,64 @@ def _preview(paths, prepared, issues, subscriptions, nonpositive, ignored_catego
         print(label)
 
 
-def _persist(database: Session, prepared: list[PreparedExpense], user_id: UUID) -> int:
-    source_keys = [source.source_key for item in prepared for source in item.sources]
-    existing = set(database.scalars(
-        select(ExpenseImportSource.source_key).where(
-            ExpenseImportSource.user_id == user_id,
-            ExpenseImportSource.source_key.in_(source_keys),
-        )
-    )) if source_keys else set()
-    if existing:
-        if existing == set(source_keys):
-            print("Todas as linhas já foram importadas. Nenhuma alteração feita.")
-            return 0
-        raise ValueError("Importação parcial detectada; gravação cancelada para evitar duplicatas.")
-
-    categories = {item.name: item.id for item in database.scalars(select(Category).where(Category.user_id == user_id, Category.deleted_at.is_(None)))}
-    methods = {item.name: item.id for item in database.scalars(select(PaymentMethod).where(PaymentMethod.user_id == user_id, PaymentMethod.deleted_at.is_(None)))}
-    count = 0
-    for item in prepared:
-        if item.category_name not in categories:
-            raise ValueError(f"Categoria ausente no banco: {item.category_name}")
-        if item.payment_method_name not in methods:
-            raise ValueError(f"Meio de pagamento ausente no banco: {item.payment_method_name}")
-        expense = Expense(
-            description=item.description, amount=item.total, expense_date=item.expense_date,
-            installment_count=len(item.amounts), first_installment_date=item.expense_date,
-            category_id=categories[item.category_name],
-            payment_method_id=methods[item.payment_method_name],
-            user_id=user_id,
-        )
-        database.add(expense)
-        database.flush()
-        for number, amount in enumerate(item.amounts, start=1):
-            database.add(ExpenseInstallment(
-                expense_id=expense.id, installment_number=number, amount=amount,
-                due_date=_month_offset(item.expense_date, number - 1),
-            ))
-        for source in item.sources:
-            database.add(ExpenseImportSource(source_key=source.source_key, expense_id=expense.id, user_id=user_id))
-        count += 1
-    database.commit()
-    return count
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="*", help="Planilhas mensais .xlsx")
     parser.add_argument("--apply", action="store_true", help="Grava após mostrar a prévia.")
-    parser.add_argument("--user-id", required=True, type=UUID, help="UUID da conta que receberá as despesas")
+    parser.add_argument(
+        "--user-id", required=True, type=UUID, help="UUID da conta que receberá as despesas"
+    )
     args = parser.parse_args()
     paths = _paths(args.files)
     rows, read_issues, subscriptions, nonpositive, ignored_categories = _read(paths)
+    from app.database import SessionLocal
+
     with SessionLocal() as database:
-        user = database.get(User, args.user_id)
-        if user is None:
-            raise SystemExit(f"Usuário não encontrado: {args.user_id}")
-        categories = list(database.scalars(select(Category.name).where(Category.user_id == user.id, Category.deleted_at.is_(None))))
+        service = ExpenseImportService(
+            ExpenseImportRepository(database),
+            SqlAlchemyUnitOfWork(database),
+        )
+        try:
+            categories = service.user_categories(args.user_id)
+        except DomainValidationError as error:
+            raise SystemExit(str(error)) from error
         oldest_month = min(_month(path) for path in paths)
-        prepared, prepare_issues, estimates, ignored_later = _prepare(rows, categories, oldest_month)
+        prepared, prepare_issues, estimates, ignored_later = _prepare(
+            rows, categories, oldest_month
+        )
         issues = read_issues + prepare_issues
-        _preview(paths, prepared, issues, subscriptions, nonpositive, ignored_categories, estimates, ignored_later)
+        _preview(
+            paths,
+            prepared,
+            issues,
+            subscriptions,
+            nonpositive,
+            ignored_categories,
+            estimates,
+            ignored_later,
+        )
         if not args.apply:
             print("\nPrévia apenas; o banco não foi alterado.")
             return
         if issues:
             raise SystemExit("Importação cancelada. Resolva as pendências listadas.")
+        commands = [
+            ImportExpenseCommand(
+                description=item.description,
+                category_name=item.category_name,
+                payment_method_name=item.payment_method_name,
+                expense_date=item.expense_date,
+                amounts=item.amounts,
+                source_keys=tuple(source.source_key for source in item.sources),
+            )
+            for item in prepared
+        ]
         try:
-            count = _persist(database, prepared, user.id)
-        except Exception:
-            database.rollback()
-            raise
+            count = service.apply(args.user_id, commands)
+        except DomainValidationError as error:
+            raise SystemExit(str(error)) from error
+        if count == 0 and commands:
+            print("Todas as linhas já foram importadas. Nenhuma alteração feita.")
         print(f"\nImportação concluída: {count} compras.")
 
 
