@@ -1,41 +1,45 @@
 import logging
 import os
-import re
 import secrets
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import urlencode
+from uuid import UUID
 
-import httpx
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from jwt import PyJWKClient
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+
+from app.modules.auth.dependencies import (
+    get_auth_service,
+    get_current_user_id,
+    get_google_oauth_service,
+)
+from app.modules.auth.errors import (
+    AccountConflictError,
+    AccountDisabledError,
+    AuthenticationRejectedError,
+    GoogleLoginUnavailableError,
+    GoogleProviderError,
+    OAuthAttemptError,
+    OAuthModeError,
+)
+from app.modules.auth.oauth import REQUEST_ID_PATTERN, GoogleOAuthService
+from app.modules.auth.schema import (
+    AuthResponse,
+    CredentialsInput,
+    RegistrationInput,
+    UserResponse,
+)
+from app.modules.auth.service import (
+    AuthService,
+    read_oauth_state_cookie,
+    safe_oauth_destination,
+)
+from app.shared.exceptions import PersistenceConflictError
 
 logger = logging.getLogger(__name__)
-
-from app.modules.auth.model import User
-from app.modules.auth.schema import AuthResponse, CredentialsInput, RegistrationInput, UserResponse
-from app.modules.auth.service import (
-    create_pkce_pair,
-    google_login,
-    login,
-    oauth_state_cookie,
-    read_oauth_state_cookie,
-    register,
-    revoke_refresh,
-    rotate_refresh,
-    user_payload,
-)
-from app.shared.auth import get_current_user
-from app.shared.dependencies import get_db
-
 router = APIRouter(tags=["Autenticação"])
 REFRESH_COOKIE = "expenses_refresh"
 OAUTH_COOKIE = "expenses_google_oauth"
 OAUTH_PATH = f"{os.getenv('AUTH_COOKIE_PATH', '/api/auth')}/google"
-ALLOWED_DESTINATIONS = {"/despesas", "/gastos", "/consolidado", "/configuracoes"}
-REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
 
 
 def _cookie_options(max_age: int) -> dict:
@@ -49,21 +53,47 @@ def _cookie_options(max_age: int) -> dict:
     }
 
 
-def _auth_response(response: Response, user: User, access: str, refresh: str, expires: int) -> AuthResponse:
-    response.set_cookie(value=refresh, **_cookie_options(int(os.getenv("AUTH_REFRESH_TOKEN_DAYS", "30")) * 86400))
-    return AuthResponse(access_token=access, expires_in=expires, user=UserResponse(**user_payload(user)))
+def _auth_response(response: Response, result) -> AuthResponse:
+    response.set_cookie(
+        value=result.refresh_token,
+        **_cookie_options(int(os.getenv("AUTH_REFRESH_TOKEN_DAYS", "30")) * 86400),
+    )
+    return AuthResponse(
+        access_token=result.access_token,
+        expires_in=result.expires_in,
+        user=UserResponse(**result.user),
+    )
+
+
+def _auth_error(error: AuthenticationRejectedError) -> HTTPException:
+    headers = {"WWW-Authenticate": "Bearer"} if error.challenge else None
+    return HTTPException(status_code=401, detail=error.detail, headers=headers)
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-def register_account(data: RegistrationInput, response: Response, database: Session = Depends(get_db)) -> AuthResponse:
-    user, access, refresh, expires = register(database, data.email, data.password)
-    return _auth_response(response, user, access, refresh, expires)
+def register_account(
+    data: RegistrationInput,
+    response: Response,
+    service: AuthService = Depends(get_auth_service),
+) -> AuthResponse:
+    try:
+        return _auth_response(response, service.register(data.email, data.password))
+    except AccountConflictError as error:
+        raise HTTPException(status_code=409, detail=error.detail) from error
+    except AuthenticationRejectedError as error:
+        raise _auth_error(error) from error
 
 
 @router.post("/login", response_model=AuthResponse)
-def login_account(data: CredentialsInput, response: Response, database: Session = Depends(get_db)) -> AuthResponse:
-    user, access, refresh, expires = login(database, data.email, data.password)
-    return _auth_response(response, user, access, refresh, expires)
+def login_account(
+    data: CredentialsInput,
+    response: Response,
+    service: AuthService = Depends(get_auth_service),
+) -> AuthResponse:
+    try:
+        return _auth_response(response, service.login(data.email, data.password))
+    except AuthenticationRejectedError as error:
+        raise _auth_error(error) from error
 
 
 def _delete_oauth_cookie(response: Response) -> None:
@@ -76,19 +106,13 @@ def _delete_oauth_cookie(response: Response) -> None:
     )
 
 
-def _safe_destination(value: str | None) -> str:
-    if not value or len(value) > 2048:
-        return "/despesas"
-    try:
-        parsed = urlsplit(value)
-    except ValueError:
-        return "/despesas"
-    if parsed.scheme or parsed.netloc or parsed.fragment or "\\" in value or parsed.path not in ALLOWED_DESTINATIONS:
-        return "/despesas"
-    return f"{parsed.path}?{parsed.query}" if parsed.query else parsed.path
-
-
-def _completion_redirect(*, request_id: str | None, mode: str, reason: str | None = None, destination: str = "/despesas") -> RedirectResponse:
+def _completion_redirect(
+    *,
+    request_id: str | None,
+    mode: str,
+    reason: str | None = None,
+    destination: str = "/despesas",
+) -> RedirectResponse:
     frontend_url = os.getenv("AUTH_FRONTEND_URL", "http://localhost:5173").rstrip("/")
     values = {"result": "error" if reason else "success"}
     if request_id:
@@ -96,47 +120,81 @@ def _completion_redirect(*, request_id: str | None, mode: str, reason: str | Non
     if reason:
         values["reason"] = reason
     if mode == "redirect" and not reason:
-        values["next"] = _safe_destination(destination)
-    response = RedirectResponse(f"{frontend_url}/auth/complete?{urlencode(values)}", status_code=303)
+        values["next"] = safe_oauth_destination(destination)
+    response = RedirectResponse(
+        f"{frontend_url}/auth/complete?{urlencode(values)}",
+        status_code=303,
+    )
     _delete_oauth_cookie(response)
     return response
 
 
-def _failure(request_id: str | None, mode: str = "popup", reason: str = "failed", *, stage: str = "callback") -> RedirectResponse:
-    # Only controlled labels and a validated random attempt ID belong in logs.
-    safe_id = request_id if request_id and REQUEST_ID_PATTERN.fullmatch(request_id) else "unavailable"
-    logger.warning("Google OAuth failed: request_id=%s stage=%s reason=%s", safe_id, stage, reason)
+def _failure(
+    request_id: str | None,
+    mode: str = "popup",
+    reason: str = "failed",
+    *,
+    stage: str = "callback",
+) -> RedirectResponse:
+    safe_id = (
+        request_id if request_id and REQUEST_ID_PATTERN.fullmatch(request_id) else "unavailable"
+    )
+    logger.warning(
+        "Google OAuth failed: request_id=%s stage=%s reason=%s",
+        safe_id,
+        stage,
+        reason,
+    )
     return _completion_redirect(request_id=request_id, mode=mode, reason=reason)
 
 
 @router.post("/refresh", response_model=AuthResponse)
-def refresh_session(request: Request, response: Response, database: Session = Depends(get_db)) -> AuthResponse:
-    user, access, refresh, expires = rotate_refresh(database, request.cookies.get(REFRESH_COOKIE))
-    return _auth_response(response, user, access, refresh, expires)
+def refresh_session(
+    request: Request,
+    response: Response,
+    service: AuthService = Depends(get_auth_service),
+) -> AuthResponse:
+    try:
+        return _auth_response(
+            response,
+            service.refresh(request.cookies.get(REFRESH_COOKIE)),
+        )
+    except AuthenticationRejectedError as error:
+        raise _auth_error(error) from error
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(request: Request, response: Response, database: Session = Depends(get_db)) -> Response:
-    revoke_refresh(database, request.cookies.get(REFRESH_COOKIE))
-    response.delete_cookie(REFRESH_COOKIE, path=os.getenv("AUTH_COOKIE_PATH", "/api/auth"), httponly=True, secure=os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true", samesite="lax")
+def logout(
+    request: Request,
+    response: Response,
+    service: AuthService = Depends(get_auth_service),
+) -> Response:
+    service.logout(request.cookies.get(REFRESH_COOKIE))
+    response.delete_cookie(
+        REFRESH_COOKIE,
+        path=os.getenv("AUTH_COOKIE_PATH", "/api/auth"),
+        httponly=True,
+        secure=os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true",
+        samesite="lax",
+    )
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
 
 @router.get("/me", response_model=UserResponse)
-def me(user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse(**user_payload(user))
+def me(
+    user_id: UUID = Depends(get_current_user_id),
+    service: AuthService = Depends(get_auth_service),
+) -> UserResponse:
+    try:
+        return UserResponse(**service.current_user(user_id))
+    except AuthenticationRejectedError as error:
+        raise _auth_error(error) from error
 
 
 @router.get("/google/status")
 def google_status() -> dict[str, bool]:
-    return {
-        "enabled": bool(
-            os.getenv("GOOGLE_CLIENT_ID", "").strip()
-            and os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
-            and os.getenv("GOOGLE_REDIRECT_URI", "").strip()
-        )
-    }
+    return {"enabled": GoogleOAuthService.enabled()}
 
 
 @router.get("/google/start")
@@ -145,39 +203,24 @@ def google_start(
     request_id: str | None = None,
     next: str | None = None,
 ):
-    client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "").strip()
-    if not client_id or not os.getenv("GOOGLE_CLIENT_SECRET", "").strip() or not redirect_uri:
-        raise HTTPException(status_code=503, detail="Login Google ainda não está configurado.")
-    if mode not in {"popup", "redirect"}:
-        raise HTTPException(status_code=400, detail="Modo de login Google inválido.")
+    try:
+        attempt = GoogleOAuthService.begin(
+            mode=mode,
+            request_id=request_id,
+            destination=next,
+        )
+    except GoogleLoginUnavailableError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Login Google ainda não está configurado.",
+        ) from error
+    except OAuthModeError as error:
+        raise HTTPException(status_code=400, detail="Modo de login Google inválido.") from error
 
-    safe_request_id = request_id if request_id and REQUEST_ID_PATTERN.fullmatch(request_id) else secrets.token_urlsafe(24)
-    safe_next = _safe_destination(next)
-    verifier, challenge = create_pkce_pair()
-    state, nonce = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-    query = urlencode({
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "scope": "openid email profile",
-        "state": state,
-        "nonce": nonce,
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-    })
-    target = f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
-    login_response = RedirectResponse(target, status_code=302)
+    login_response = RedirectResponse(attempt.authorization_url, status_code=302)
     login_response.set_cookie(
         OAUTH_COOKIE,
-        oauth_state_cookie({
-            "state": state,
-            "nonce": nonce,
-            "verifier": verifier,
-            "request_id": safe_request_id,
-            "mode": mode,
-            "next": safe_next,
-        }),
+        attempt.state_cookie,
         max_age=600,
         httponly=True,
         secure=os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true",
@@ -193,15 +236,16 @@ async def google_callback(
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
-    database: Session = Depends(get_db),
+    service: GoogleOAuthService = Depends(get_google_oauth_service),
 ):
     cookie = request.cookies.get(OAUTH_COOKIE)
     if not cookie:
         return _failure(None, reason="expired", stage="cookie_missing")
     try:
         saved_state = read_oauth_state_cookie(cookie)
-    except HTTPException:
+    except OAuthAttemptError:
         return _failure(None, reason="expired", stage="cookie_invalid")
+
     request_id = saved_state.get("request_id")
     mode = saved_state.get("mode", "popup")
     if not REQUEST_ID_PATTERN.fullmatch(request_id or "") or mode not in {"popup", "redirect"}:
@@ -209,106 +253,34 @@ async def google_callback(
     if not state or not secrets.compare_digest(state, saved_state.get("state", "")):
         return _failure(request_id, mode, "expired", stage="state_mismatch")
     if error:
-        return _failure(request_id, mode, "cancelled" if error == "access_denied" else "failed", stage="google_authorization")
+        reason = "cancelled" if error == "access_denied" else "failed"
+        return _failure(request_id, mode, reason, stage="google_authorization")
     if not code:
         return _failure(request_id, mode, "expired", stage="code_missing")
 
-    redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "").strip()
-    stage = "token_exchange"
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            token_response = await client.post(
-                "https://oauth2.googleapis.com/token",
-                data={
-                    "code": code,
-                    "client_id": os.getenv("GOOGLE_CLIENT_ID", ""),
-                    "client_secret": os.getenv("GOOGLE_CLIENT_SECRET", ""),
-                    "redirect_uri": redirect_uri,
-                    "grant_type": "authorization_code",
-                    "code_verifier": saved_state["verifier"],
-                },
-            )
-        token_response.raise_for_status()
-        id_token = token_response.json()["id_token"]
-        stage = "signing_key"
-        signing_key = PyJWKClient("https://www.googleapis.com/oauth2/v3/certs").get_signing_key_from_jwt(id_token).key
-        stage = "id_token_validation"
-        claims = jwt.decode(
-            id_token,
-            signing_key,
-            algorithms=["RS256"],
-            audience=os.getenv("GOOGLE_CLIENT_ID", ""),
-            issuer=["https://accounts.google.com", "accounts.google.com"],
-            options={"require": ["sub", "email", "email_verified", "nonce", "iss", "aud", "exp"]},
+        result = await service.authenticate(code, saved_state)
+    except GoogleProviderError as failure:
+        logger.warning(
+            "Google OAuth provider failed: stage=%s code=%s",
+            failure.stage,
+            failure.code,
         )
-        if claims["nonce"] != saved_state["nonce"] or claims["email_verified"] is not True:
-            raise ValueError("invalid Google claims")
-        stage = "session_creation"
-        user, _, refresh, _ = google_login(
-            database,
-            claims["sub"],
-            claims["email"].strip().casefold(),
-            claims.get("name"),
-            hosted_domain=claims.get("hd"),
-        )
-    except IntegrityError:
-        database.rollback()
-        logger.warning("Google OAuth identity/session database conflict")
-        try:
-            user, _, refresh, _ = google_login(
-                database,
-                claims["sub"],
-                claims["email"].strip().casefold(),
-                claims.get("name"),
-                hosted_domain=claims.get("hd"),
-            )
-        except HTTPException as exc:
-            database.rollback()
-            logger.warning("Google OAuth account rejected with status %s", exc.status_code)
-            return _failure(request_id, mode, "account_conflict" if exc.status_code == 409 else "failed", stage=stage)
-        except IntegrityError:
-            database.rollback()
-            logger.warning("Google OAuth identity/session database conflict after retry")
-            return _failure(request_id, mode, "failed", stage=stage)
-    except HTTPException as exc:
-        database.rollback()
-        logger.warning("Google OAuth account rejected with status %s", exc.status_code)
-        return _failure(request_id, mode, "account_conflict" if exc.status_code == 409 else "failed", stage=stage)
-    except httpx.HTTPStatusError as exc:
-        database.rollback()
-        error_code = "unknown"
-        try:
-            candidate = exc.response.json().get("error")
-            if isinstance(candidate, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", candidate):
-                error_code = candidate
-        except (ValueError, TypeError, AttributeError):
-            pass
-        logger.warning("Google OAuth token exchange rejected: HTTP %s, code %s", exc.response.status_code, error_code)
-        return _failure(request_id, mode, "failed", stage=stage)
-    except httpx.HTTPError as exc:
-        database.rollback()
-        logger.warning("Google OAuth network/JWK request failed: %s", type(exc).__name__)
-        return _failure(request_id, mode, "failed", stage=stage)
-    except KeyError as exc:
-        database.rollback()
-        missing = exc.args[0] if exc.args else "unknown"
-        if missing not in {"id_token", "sub", "email", "email_verified", "nonce", "iss", "aud", "exp"}:
-            missing = "unknown"
-        logger.warning("Google OAuth response/claims missing field: %s", missing)
-        return _failure(request_id, mode, "failed", stage=stage)
-    except ValueError:
-        database.rollback()
-        logger.warning("Google OAuth claims validation failed")
-        return _failure(request_id, mode, "failed", stage=stage)
-    except jwt.PyJWTError as exc:
-        database.rollback()
-        logger.warning("Google OAuth ID token validation failed: %s", type(exc).__name__)
-        return _failure(request_id, mode, "failed", stage=stage)
+        return _failure(request_id, mode, "failed", stage=failure.stage)
+    except AccountConflictError:
+        return _failure(request_id, mode, "account_conflict", stage="account_link")
+    except AccountDisabledError:
+        return _failure(request_id, mode, "failed", stage="account_status")
+    except (PersistenceConflictError, AuthenticationRejectedError):
+        return _failure(request_id, mode, "failed", stage="session_creation")
 
     completion = _completion_redirect(
         request_id=request_id,
         mode=mode,
         destination=saved_state.get("next", "/despesas"),
     )
-    completion.set_cookie(value=refresh, **_cookie_options(int(os.getenv("AUTH_REFRESH_TOKEN_DAYS", "30")) * 86400))
+    completion.set_cookie(
+        value=result.refresh_token,
+        **_cookie_options(int(os.getenv("AUTH_REFRESH_TOKEN_DAYS", "30")) * 86400),
+    )
     return completion

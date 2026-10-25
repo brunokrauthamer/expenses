@@ -1,13 +1,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy.orm import Session
 
-from app.modules.auth.model import User
+from app.modules.auth.dependencies import get_current_user_id
+from app.modules.categories.dependencies import get_category_service
 from app.modules.categories.schema import CategoryCreate, CategoryResponse, CategoryUpdate
-from app.modules.categories.service import create_category, delete_category, list_categories, update_category
-from app.shared.auth import get_current_user
-from app.shared.dependencies import get_db
+from app.modules.categories.service import CategoryService
 from app.shared.exceptions import DuplicateResourceError, ResourceNotFoundError
 
 router = APIRouter(tags=["Categorias"])
@@ -16,16 +14,20 @@ router = APIRouter(tags=["Categorias"])
 @router.get("", response_model=list[CategoryResponse])
 def get_categories(
     include_deleted: bool = Query(False),
-    database: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    service: CategoryService = Depends(get_category_service),
+    user_id: UUID = Depends(get_current_user_id),
 ):
-    return list_categories(database, user.id, include_deleted)
+    return service.list(user_id, include_deleted)
 
 
 @router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
-def post_category(data: CategoryCreate, database: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def post_category(
+    data: CategoryCreate,
+    service: CategoryService = Depends(get_category_service),
+    user_id: UUID = Depends(get_current_user_id),
+):
     try:
-        return create_category(database, user.id, data.name)
+        return service.create(user_id, data.name)
     except DuplicateResourceError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ValueError as error:
@@ -33,9 +35,14 @@ def post_category(data: CategoryCreate, database: Session = Depends(get_db), use
 
 
 @router.put("/{category_id}", response_model=CategoryResponse)
-def put_category(category_id: int, data: CategoryUpdate, database: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def put_category(
+    category_id: int,
+    data: CategoryUpdate,
+    service: CategoryService = Depends(get_category_service),
+    user_id: UUID = Depends(get_current_user_id),
+):
     try:
-        return update_category(database, category_id, user.id, data.name)
+        return service.update(category_id, user_id, data.name)
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except DuplicateResourceError as error:
@@ -45,9 +52,13 @@ def put_category(category_id: int, data: CategoryUpdate, database: Session = Dep
 
 
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_category(category_id: int, database: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def remove_category(
+    category_id: int,
+    service: CategoryService = Depends(get_category_service),
+    user_id: UUID = Depends(get_current_user_id),
+):
     try:
-        delete_category(database, category_id, user.id)
+        service.delete(category_id, user_id)
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)

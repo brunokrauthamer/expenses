@@ -1,14 +1,12 @@
 from datetime import date
 from decimal import Decimal
 
+from app.modules.categories.model import Category
+from app.modules.expenses.model import Expense, ExpenseInstallment
+from app.modules.income_entries.model import IncomeCategory, IncomeEntry
+from app.modules.payment_methods.model import PaymentMethod
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-
-from app.modules.categories.model import Category
-from app.modules.expenses.model import Expense
-from app.modules.expenses.model import ExpenseInstallment
-from app.modules.payment_methods.model import PaymentMethod
-from app.modules.income_entries.model import IncomeCategory, IncomeEntry
 
 
 def create_references(database: Session) -> tuple[Category, PaymentMethod]:
@@ -102,28 +100,37 @@ def test_expense_history_combines_charges_and_reimbursements_with_global_paginat
         {"due_date": date(2026, 10, 20)}
     )
     user_id = database.info["test_user_id"]
-    reimbursement_category = IncomeCategory(name="Reembolso", user_id=user_id, requires_expense_category=True)
-    salary_category = IncomeCategory(name="Salário", user_id=user_id, requires_expense_category=False)
+    reimbursement_category = IncomeCategory(
+        name="Reembolso", user_id=user_id, requires_expense_category=True
+    )
+    salary_category = IncomeCategory(
+        name="Salário", user_id=user_id, requires_expense_category=False
+    )
     database.add_all([reimbursement_category, salary_category])
     database.flush()
     reimbursement = IncomeEntry(
-        description="Devolução", amount=Decimal("10.00"), received_date=date(2026, 10, 15),
-        income_category_id=reimbursement_category.id, expense_category_id=category.id,
+        description="Devolução",
+        amount=Decimal("10.00"),
+        received_date=date(2026, 10, 15),
+        income_category_id=reimbursement_category.id,
+        expense_category_id=category.id,
         user_id=user_id,
     )
-    database.add_all([
-        reimbursement,
-        IncomeEntry(
-            description="Salário", amount=Decimal("1000.00"), received_date=date(2026, 10, 28),
-            income_category_id=salary_category.id,
-            user_id=user_id,
-        ),
-    ])
+    database.add_all(
+        [
+            reimbursement,
+            IncomeEntry(
+                description="Salário",
+                amount=Decimal("1000.00"),
+                received_date=date(2026, 10, 28),
+                income_category_id=salary_category.id,
+                user_id=user_id,
+            ),
+        ]
+    )
     database.commit()
 
-    first_page = client.get(
-        "/expenses/history", params={"month": "2026-10", "page_size": 2}
-    )
+    first_page = client.get("/expenses/history", params={"month": "2026-10", "page_size": 2})
     second_page = client.get(
         "/expenses/history", params={"month": "2026-10", "page_size": 2, "page": 2}
     )
@@ -143,13 +150,19 @@ def test_expense_history_combines_charges_and_reimbursements_with_global_paginat
     ]
     payment_filtered = client.get(
         "/expenses/history",
-        params={"month": "2026-10", "category_id": category.id, "payment_method_id": payment_method.id},
+        params={
+            "month": "2026-10",
+            "category_id": category.id,
+            "payment_method_id": payment_method.id,
+        },
     )
     reimbursement_search = client.get(
         "/expenses/history", params={"month": "2026-10", "search": "Devolução"}
     )
     assert payment_filtered.json()["total"] == 3
-    assert [(item["kind"], item["description"]) for item in reimbursement_search.json()["items"]] == [
+    assert [
+        (item["kind"], item["description"]) for item in reimbursement_search.json()["items"]
+    ] == [
         ("reimbursement", "Devolução"),
     ]
 
@@ -238,9 +251,7 @@ def test_update_expense(client: TestClient, database: Session) -> None:
 
 def test_delete_expense(client: TestClient, database: Session) -> None:
     category, payment_method = create_references(database)
-    expense = create_expense(
-        database, category.id, payment_method.id, "Ônibus", date(2026, 10, 18)
-    )
+    expense = create_expense(database, category.id, payment_method.id, "Ônibus", date(2026, 10, 18))
 
     response = client.delete(f"/expenses/{expense.id}")
 

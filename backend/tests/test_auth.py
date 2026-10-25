@@ -1,18 +1,39 @@
-from sqlalchemy import select
+import base64
 from uuid import UUID
 
-import base64
 import pytest
-from fastapi import HTTPException
-
+from app.modules.auth.contracts import GoogleIdentity
+from app.modules.auth.errors import AccountConflictError
 from app.modules.auth.model import ExternalIdentity, LocalCredential, RefreshSession, User
-from app.modules.auth.service import _new_user, google_login
+from app.modules.auth.repository import AuthRepository
+from app.modules.auth.service import AuthService
 from app.modules.categories.model import Category
 from app.modules.income_entries.model import IncomeCategory
 from app.modules.payment_methods.model import PaymentMethod
-from app.shared.reference_data import CATEGORIES, INCOME_CATEGORIES, PAYMENT_METHODS
-from app.shared.reference_data import initialize_user_reference_data
 from app.shared.crypto import decrypt_personal_data, encrypt_personal_data
+from app.shared.reference_data import (
+    CATEGORIES,
+    INCOME_CATEGORIES,
+    PAYMENT_METHODS,
+    initialize_user_reference_data,
+)
+from app.shared.sqlalchemy_uow import SqlAlchemyUnitOfWork
+from sqlalchemy import select
+
+
+def _auth_service(database):
+    return AuthService(AuthRepository(database), SqlAlchemyUnitOfWork(database))
+
+
+def _create_user(database, email):
+    from app.shared.crypto import lookup_digest
+
+    return AuthRepository(database).create_user(
+        email_ciphertext=encrypt_personal_data(email),
+        email_lookup=lookup_digest(email),
+        name_ciphertext=None,
+        encryption_key_version=1,
+    )
 
 
 def test_register_stores_personal_data_encrypted_and_returns_bearer_cookie(auth_client, database):
@@ -37,66 +58,86 @@ def test_register_stores_personal_data_encrypted_and_returns_bearer_cookie(auth_
     assert user.reference_data_initialized_at is not None
     assert database.query(Category).filter_by(user_id=user.id).count() == len(CATEGORIES)
     assert database.query(PaymentMethod).filter_by(user_id=user.id).count() == len(PAYMENT_METHODS)
-    assert database.query(IncomeCategory).filter_by(user_id=user.id).count() == len(INCOME_CATEGORIES)
-
-
-def test_new_google_account_initializes_catalog_once_and_existing_link_does_not_duplicate(database):
-    user, *_ = google_login(database, "google-subject", "person@gmail.com", "Person")
-    initial_counts = (
-        database.query(Category).filter_by(user_id=user.id).count(),
-        database.query(PaymentMethod).filter_by(user_id=user.id).count(),
-        database.query(IncomeCategory).filter_by(user_id=user.id).count(),
+    assert database.query(IncomeCategory).filter_by(user_id=user.id).count() == len(
+        INCOME_CATEGORIES
     )
-    same_user, *_ = google_login(database, "google-subject", "person@gmail.com", "Person")
-    assert same_user.id == user.id
+
+
+def test_new_google_account_initializes_catalog_once_and_existing_link_does_not_duplicate(
+    database, auth_environment
+):
+    service = _auth_service(database)
+    first = service.google_login(
+        GoogleIdentity("google-subject", "person@gmail.com", "Person", None)
+    )
+    user_id = first.user["id"]
+    initial_counts = (
+        database.query(Category).filter_by(user_id=user_id).count(),
+        database.query(PaymentMethod).filter_by(user_id=user_id).count(),
+        database.query(IncomeCategory).filter_by(user_id=user_id).count(),
+    )
+    same_user = service.google_login(
+        GoogleIdentity("google-subject", "person@gmail.com", "Person", None)
+    )
+    assert same_user.user["id"] == user_id
     assert initial_counts == (len(CATEGORIES), len(PAYMENT_METHODS), len(INCOME_CATEGORIES))
     assert (
-        database.query(Category).filter_by(user_id=user.id).count(),
-        database.query(PaymentMethod).filter_by(user_id=user.id).count(),
-        database.query(IncomeCategory).filter_by(user_id=user.id).count(),
+        database.query(Category).filter_by(user_id=user_id).count(),
+        database.query(PaymentMethod).filter_by(user_id=user_id).count(),
+        database.query(IncomeCategory).filter_by(user_id=user_id).count(),
     ) == initial_counts
 
 
-def test_google_links_existing_gmail_user_without_recreating_catalogs(database):
-    user = _new_user(database, "person@gmail.com")
+def test_google_links_existing_gmail_user_without_recreating_catalogs(database, auth_environment):
+    user = _create_user(database, "person@gmail.com")
     database.commit()
+    user_id = user.id
     initial_counts = (
-        database.query(Category).filter_by(user_id=user.id).count(),
-        database.query(PaymentMethod).filter_by(user_id=user.id).count(),
-        database.query(IncomeCategory).filter_by(user_id=user.id).count(),
+        database.query(Category).filter_by(user_id=user_id).count(),
+        database.query(PaymentMethod).filter_by(user_id=user_id).count(),
+        database.query(IncomeCategory).filter_by(user_id=user_id).count(),
     )
 
-    linked_user, *_ = google_login(database, "linked-google-subject", "person@gmail.com", "Person")
+    linked_user = _auth_service(database).google_login(
+        GoogleIdentity("linked-google-subject", "person@gmail.com", "Person", None)
+    )
 
-    assert linked_user.id == user.id
+    assert linked_user.user["id"] == user_id
     assert initial_counts == (len(CATEGORIES), len(PAYMENT_METHODS), len(INCOME_CATEGORIES))
     assert (
-        database.query(Category).filter_by(user_id=user.id).count(),
-        database.query(PaymentMethod).filter_by(user_id=user.id).count(),
-        database.query(IncomeCategory).filter_by(user_id=user.id).count(),
+        database.query(Category).filter_by(user_id=user_id).count(),
+        database.query(PaymentMethod).filter_by(user_id=user_id).count(),
+        database.query(IncomeCategory).filter_by(user_id=user_id).count(),
     ) == initial_counts
-    assert database.query(ExternalIdentity).filter_by(user_id=user.id, provider="google").count() == 1
+    assert (
+        database.query(ExternalIdentity).filter_by(user_id=user_id, provider="google").count() == 1
+    )
 
 
-def test_google_link_requires_matching_verified_host_for_existing_non_gmail_user(database):
-    user = _new_user(database, "person@example.com")
+def test_google_link_requires_matching_verified_host_for_existing_non_gmail_user(
+    database, auth_environment
+):
+    user = _create_user(database, "person@example.com")
     database.commit()
     initial_counts = database.query(Category).filter_by(user_id=user.id).count()
 
-    with pytest.raises(HTTPException) as failure:
-        google_login(database, "company-google-subject", "person@example.com", "Person")
-    assert failure.value.status_code == 409
+    with pytest.raises(AccountConflictError):
+        _auth_service(database).google_login(
+            GoogleIdentity("company-google-subject", "person@example.com", "Person", None)
+        )
 
-    linked_user, *_ = google_login(
-        database, "company-google-subject", "person@example.com", "Person", hosted_domain="example.com",
+    linked_user = _auth_service(database).google_login(
+        GoogleIdentity("company-google-subject", "person@example.com", "Person", "example.com")
     )
-    assert linked_user.id == user.id
+    assert linked_user.user["id"] == user.id
     assert database.query(Category).filter_by(user_id=user.id).count() == initial_counts
-    assert database.query(ExternalIdentity).filter_by(user_id=user.id, provider="google").count() == 1
+    assert (
+        database.query(ExternalIdentity).filter_by(user_id=user.id, provider="google").count() == 1
+    )
 
 
-def test_catalog_initialization_rolls_back_with_new_user(database):
-    user = _new_user(database, "rollback@example.com")
+def test_catalog_initialization_rolls_back_with_new_user(database, auth_environment):
+    user = _create_user(database, "rollback@example.com")
     database.flush()
     assert database.query(Category).filter_by(user_id=user.id).count() == len(CATEGORIES)
     database.rollback()
@@ -104,26 +145,53 @@ def test_catalog_initialization_rolls_back_with_new_user(database):
     assert database.query(Category).filter_by(user_id=user.id).count() == 0
 
 
-def test_catalog_initialization_does_not_restore_renamed_or_deleted_defaults(database):
-    user = _new_user(database, "customized@example.com")
+def test_catalog_initialization_does_not_restore_renamed_or_deleted_defaults(
+    database, auth_environment
+):
+    user = _create_user(database, "customized@example.com")
     database.commit()
-    category = database.scalar(select(Category).where(Category.user_id == user.id, Category.name == CATEGORIES[0]))
+    category = database.scalar(
+        select(Category).where(Category.user_id == user.id, Category.name == CATEGORIES[0])
+    )
     deleted_method = database.scalar(select(PaymentMethod).where(PaymentMethod.user_id == user.id))
-    deleted_income = database.scalar(select(IncomeCategory).where(IncomeCategory.user_id == user.id))
+    deleted_income = database.scalar(
+        select(IncomeCategory).where(IncomeCategory.user_id == user.id)
+    )
+    initialized_at = database.get(User, user.id).reference_data_initialized_at
     category.name = "Compras personalizadas"
-    deleted_method.deleted_at = user.reference_data_initialized_at
-    deleted_income.deleted_at = user.reference_data_initialized_at
+    deleted_method.deleted_at = initialized_at
+    deleted_income.deleted_at = initialized_at
     database.commit()
 
-    assert initialize_user_reference_data(database, user) is False
+    assert initialize_user_reference_data(database, database.get(User, user.id)) is False
     database.commit()
     assert database.query(Category).filter_by(user_id=user.id).count() == len(CATEGORIES)
-    assert database.scalar(select(Category.name).where(Category.id == category.id)) == "Compras personalizadas"
-    assert database.scalar(select(Category.id).where(Category.user_id == user.id, Category.name == CATEGORIES[0])) is None
+    assert (
+        database.scalar(select(Category.name).where(Category.id == category.id))
+        == "Compras personalizadas"
+    )
+    assert (
+        database.scalar(
+            select(Category.id).where(Category.user_id == user.id, Category.name == CATEGORIES[0])
+        )
+        is None
+    )
     assert database.query(PaymentMethod).filter_by(user_id=user.id).count() == len(PAYMENT_METHODS)
-    assert database.scalar(select(PaymentMethod.deleted_at).where(PaymentMethod.id == deleted_method.id)) is not None
-    assert database.query(IncomeCategory).filter_by(user_id=user.id).count() == len(INCOME_CATEGORIES)
-    assert database.scalar(select(IncomeCategory.deleted_at).where(IncomeCategory.id == deleted_income.id)) is not None
+    assert (
+        database.scalar(
+            select(PaymentMethod.deleted_at).where(PaymentMethod.id == deleted_method.id)
+        )
+        is not None
+    )
+    assert database.query(IncomeCategory).filter_by(user_id=user.id).count() == len(
+        INCOME_CATEGORIES
+    )
+    assert (
+        database.scalar(
+            select(IncomeCategory.deleted_at).where(IncomeCategory.id == deleted_income.id)
+        )
+        is not None
+    )
 
 
 def test_business_routes_require_a_valid_bearer(auth_client):
@@ -134,10 +202,19 @@ def test_business_routes_require_a_valid_bearer(auth_client):
     )
     token = response.json()["access_token"]
 
-    assert auth_client.get("/categories", headers={"Authorization": f"Bearer {token}"}).status_code == 200
-    assert auth_client.get("/categories", headers={"Authorization": "Basic invalid"}).status_code == 401
+    assert (
+        auth_client.get("/categories", headers={"Authorization": f"Bearer {token}"}).status_code
+        == 200
+    )
+    assert (
+        auth_client.get("/categories", headers={"Authorization": "Basic invalid"}).status_code
+        == 401
+    )
     tampered = token[:-1] + ("a" if token[-1] != "a" else "b")
-    assert auth_client.get("/categories", headers={"Authorization": f"Bearer {tampered}"}).status_code == 401
+    assert (
+        auth_client.get("/categories", headers={"Authorization": f"Bearer {tampered}"}).status_code
+        == 401
+    )
 
 
 def test_invalid_login_has_same_message_for_unknown_user_and_wrong_password(auth_client):
@@ -182,7 +259,10 @@ def test_refresh_rotates_token_and_rejects_reuse(auth_client, database):
     auth_client.cookies.set("expenses_refresh", old_token, path="/auth")
     reused = auth_client.post("/auth/refresh")
     assert reused.status_code == 401
-    assert database.scalar(select(RefreshSession).where(RefreshSession.token_hash.is_not(None))) is not None
+    assert (
+        database.scalar(select(RefreshSession).where(RefreshSession.token_hash.is_not(None)))
+        is not None
+    )
 
 
 def test_google_login_is_not_advertised_as_configured_without_credentials(auth_client, monkeypatch):
@@ -246,7 +326,9 @@ def test_distinct_authenticated_users_are_isolated(auth_client, database):
     )
     assert visible.status_code == 200
     assert visible.json() == []
-    second_categories = auth_client.get("/categories", headers={"Authorization": f"Bearer {second['access_token']}"}).json()
+    second_categories = auth_client.get(
+        "/categories", headers={"Authorization": f"Bearer {second['access_token']}"}
+    ).json()
     assert second_categories and "Casa" not in {item["name"] for item in second_categories}
 
 

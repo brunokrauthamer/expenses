@@ -1,12 +1,11 @@
 from datetime import date
 from decimal import Decimal
 
-from fastapi.testclient import TestClient
-from sqlalchemy.orm import Session
-
 from app.modules.categories.model import Category
 from app.modules.expenses.model import Expense, ExpenseInstallment
 from app.modules.payment_methods.model import PaymentMethod
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 
 def add_installment_purchase(
@@ -135,16 +134,64 @@ def test_summary_aggregates_due_amounts_by_month_and_category(
         "reimbursement_amount": "0.00",
         "net_expense_amount": "650.01",
         "monthly_totals": [
-            {"month": "2026-01", "amount_due": "0.00", "gross_expense_amount": "0.00", "reimbursement_amount": "0.00", "net_expense_amount": "0.00"},
-            {"month": "2026-02", "amount_due": "200.00", "gross_expense_amount": "200.00", "reimbursement_amount": "0.00", "net_expense_amount": "200.00"},
-            {"month": "2026-03", "amount_due": "200.00", "gross_expense_amount": "200.00", "reimbursement_amount": "0.00", "net_expense_amount": "200.00"},
-            {"month": "2026-04", "amount_due": "250.01", "gross_expense_amount": "250.01", "reimbursement_amount": "0.00", "net_expense_amount": "250.01"},
-            {"month": "2026-05", "amount_due": "0.00", "gross_expense_amount": "0.00", "reimbursement_amount": "0.00", "net_expense_amount": "0.00"},
-            {"month": "2026-06", "amount_due": "0.00", "gross_expense_amount": "0.00", "reimbursement_amount": "0.00", "net_expense_amount": "0.00"},
+            {
+                "month": "2026-01",
+                "amount_due": "0.00",
+                "gross_expense_amount": "0.00",
+                "reimbursement_amount": "0.00",
+                "net_expense_amount": "0.00",
+            },
+            {
+                "month": "2026-02",
+                "amount_due": "200.00",
+                "gross_expense_amount": "200.00",
+                "reimbursement_amount": "0.00",
+                "net_expense_amount": "200.00",
+            },
+            {
+                "month": "2026-03",
+                "amount_due": "200.00",
+                "gross_expense_amount": "200.00",
+                "reimbursement_amount": "0.00",
+                "net_expense_amount": "200.00",
+            },
+            {
+                "month": "2026-04",
+                "amount_due": "250.01",
+                "gross_expense_amount": "250.01",
+                "reimbursement_amount": "0.00",
+                "net_expense_amount": "250.01",
+            },
+            {
+                "month": "2026-05",
+                "amount_due": "0.00",
+                "gross_expense_amount": "0.00",
+                "reimbursement_amount": "0.00",
+                "net_expense_amount": "0.00",
+            },
+            {
+                "month": "2026-06",
+                "amount_due": "0.00",
+                "gross_expense_amount": "0.00",
+                "reimbursement_amount": "0.00",
+                "net_expense_amount": "0.00",
+            },
         ],
         "category_totals": [
-            {"category_id": groceries.id, "amount_due": "600.00", "gross_expense_amount": "600.00", "reimbursement_amount": "0.00", "net_expense_amount": "600.00"},
-            {"category_id": leisure.id, "amount_due": "50.01", "gross_expense_amount": "50.01", "reimbursement_amount": "0.00", "net_expense_amount": "50.01"},
+            {
+                "category_id": groceries.id,
+                "amount_due": "600.00",
+                "gross_expense_amount": "600.00",
+                "reimbursement_amount": "0.00",
+                "net_expense_amount": "600.00",
+            },
+            {
+                "category_id": leisure.id,
+                "amount_due": "50.01",
+                "gross_expense_amount": "50.01",
+                "reimbursement_amount": "0.00",
+                "net_expense_amount": "50.01",
+            },
         ],
     }
 
@@ -161,8 +208,7 @@ def test_summary_aggregates_due_amounts_by_month_and_category(
     assert market_response.status_code == 200
     assert market_response.json()["total_amount_due"] == "600.00"
     assert sum(
-        Decimal(month["amount_due"])
-        for month in market_response.json()["monthly_totals"]
+        Decimal(month["amount_due"]) for month in market_response.json()["monthly_totals"]
     ) == Decimal("600.00")
 
 
@@ -194,14 +240,23 @@ def test_month_range_filters_are_validated_and_applied_to_installments(
     assert response.status_code == 200
     assert response.json()["total"] == 1
 
-    assert client.get(
-        "/expenses/summary", params={"start_month": "2026-07", "end_month": "2026-03"}
-    ).status_code == 422
-    assert client.get(
-        "/expenses/summary", params={"start_month": "2026-00", "end_month": "2026-01"}
-    ).status_code == 422
-    assert client.get(
-        "/expenses/summary", params={"start_month": "2020-01", "end_month": "2030-01"}
-    ).status_code == 422
+    assert (
+        client.get(
+            "/expenses/summary", params={"start_month": "2026-07", "end_month": "2026-03"}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/expenses/summary", params={"start_month": "2026-00", "end_month": "2026-01"}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/expenses/summary", params={"start_month": "2020-01", "end_month": "2030-01"}
+        ).status_code
+        == 422
+    )
     assert client.get("/expenses", params={"start_month": "2026-03"}).status_code == 422
     assert out_of_range.description == "Cinema"

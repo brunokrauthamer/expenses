@@ -1,9 +1,15 @@
-from datetime import datetime
+from datetime import date
+from decimal import Decimal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy.orm import Session
 
-from app.modules.auth.model import User
+from app.modules.auth.dependencies import get_current_user_id
+from app.modules.income_entries.contracts import IncomeEntryCommand
+from app.modules.income_entries.dependencies import (
+    get_income_category_service,
+    get_income_entry_service,
+)
 from app.modules.income_entries.schema import (
     IncomeCategoryCreate,
     IncomeCategoryResponse,
@@ -12,19 +18,7 @@ from app.modules.income_entries.schema import (
     IncomeEntryPage,
     IncomeEntryResponse,
 )
-from app.modules.income_entries.service import (
-    create_income_category,
-    create_income_entry,
-    delete_income_category,
-    delete_income_entry,
-    income_entry_payload,
-    list_income_categories,
-    list_income_entries,
-    update_income_category,
-    update_income_entry,
-)
-from app.shared.auth import get_current_user
-from app.shared.dependencies import get_db
+from app.modules.income_entries.service import IncomeCategoryService, IncomeEntryService
 from app.shared.exceptions import DuplicateResourceError, ResourceNotFoundError
 
 router = APIRouter(tags=["Entradas"])
@@ -34,16 +28,22 @@ income_categories_router = APIRouter(tags=["Categorias de entrada"])
 @income_categories_router.get("", response_model=list[IncomeCategoryResponse])
 def get_income_categories(
     include_deleted: bool = Query(False),
-    database: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    service: IncomeCategoryService = Depends(get_income_category_service),
+    user_id: UUID = Depends(get_current_user_id),
 ):
-    return list_income_categories(database, user.id, include_deleted)
+    return service.list(user_id, include_deleted)
 
 
-@income_categories_router.post("", response_model=IncomeCategoryResponse, status_code=status.HTTP_201_CREATED)
-def post_income_category(data: IncomeCategoryCreate, database: Session = Depends(get_db), user: User = Depends(get_current_user)):
+@income_categories_router.post(
+    "", response_model=IncomeCategoryResponse, status_code=status.HTTP_201_CREATED
+)
+def post_income_category(
+    data: IncomeCategoryCreate,
+    service: IncomeCategoryService = Depends(get_income_category_service),
+    user_id: UUID = Depends(get_current_user_id),
+):
     try:
-        return create_income_category(database, user.id, data.name, data.requires_expense_category)
+        return service.create(user_id, data.name, data.requires_expense_category)
     except DuplicateResourceError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     except ValueError as error:
@@ -51,9 +51,19 @@ def post_income_category(data: IncomeCategoryCreate, database: Session = Depends
 
 
 @income_categories_router.put("/{category_id}", response_model=IncomeCategoryResponse)
-def put_income_category(category_id: int, data: IncomeCategoryUpdate, database: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def put_income_category(
+    category_id: int,
+    data: IncomeCategoryUpdate,
+    service: IncomeCategoryService = Depends(get_income_category_service),
+    user_id: UUID = Depends(get_current_user_id),
+):
     try:
-        return update_income_category(database, category_id, user.id, data.name, data.requires_expense_category)
+        return service.update(
+            user_id,
+            category_id,
+            data.name,
+            data.requires_expense_category,
+        )
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except DuplicateResourceError as error:
@@ -63,9 +73,13 @@ def put_income_category(category_id: int, data: IncomeCategoryUpdate, database: 
 
 
 @income_categories_router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_income_category(category_id: int, database: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def remove_income_category(
+    category_id: int,
+    service: IncomeCategoryService = Depends(get_income_category_service),
+    user_id: UUID = Depends(get_current_user_id),
+):
     try:
-        delete_income_category(database, category_id, user.id)
+        service.delete(user_id, category_id)
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -80,30 +94,36 @@ def get_income_entries(
     income_category_id: int | None = Query(None, ge=1),
     expense_category_id: int | None = Query(None, ge=1),
     search: str | None = Query(None, max_length=100),
-    database: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    service: IncomeEntryService = Depends(get_income_entry_service),
+    user_id: UUID = Depends(get_current_user_id),
 ):
-    if (start_month is None) != (end_month is None):
-        raise HTTPException(status_code=422, detail="Informe os meses inicial e final do período.")
-    if start_month:
-        try:
-            first, last = datetime.strptime(start_month, "%Y-%m"), datetime.strptime(end_month, "%Y-%m")
-        except ValueError as error:
-            raise HTTPException(status_code=422, detail="Informe meses válidos.") from error
-        if first > last or (last.year - first.year) * 12 + last.month - first.month >= 120:
-            raise HTTPException(status_code=422, detail="Informe um período válido de até 120 meses.")
-    items, total = list_income_entries(
-        database, user.id, page, page_size, start_month, end_month,
-        income_category_id, expense_category_id, search,
+    items, total = service.list(
+        user_id,
+        page,
+        page_size,
+        start_month,
+        end_month,
+        income_category_id,
+        expense_category_id,
+        search,
     )
-    return IncomeEntryPage(items=items, page=page, page_size=page_size, total=total, total_pages=(total + page_size - 1) // page_size)
+    return IncomeEntryPage(
+        items=[IncomeEntryResponse(**item) for item in items],
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=(total + page_size - 1) // page_size,
+    )
 
 
 @router.post("", response_model=IncomeEntryResponse, status_code=status.HTTP_201_CREATED)
-def post_income_entry(data: IncomeEntryCreate, database: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def post_income_entry(
+    data: IncomeEntryCreate,
+    service: IncomeEntryService = Depends(get_income_entry_service),
+    user_id: UUID = Depends(get_current_user_id),
+):
     try:
-        entry = create_income_entry(database, user.id, data)
-        return income_entry_payload(database, entry)
+        return IncomeEntryResponse(**service.create(user_id, _command(data)))
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
@@ -111,10 +131,14 @@ def post_income_entry(data: IncomeEntryCreate, database: Session = Depends(get_d
 
 
 @router.put("/{entry_id}", response_model=IncomeEntryResponse)
-def put_income_entry(entry_id: int, data: IncomeEntryCreate, database: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def put_income_entry(
+    entry_id: int,
+    data: IncomeEntryCreate,
+    service: IncomeEntryService = Depends(get_income_entry_service),
+    user_id: UUID = Depends(get_current_user_id),
+):
     try:
-        entry = update_income_entry(database, user.id, entry_id, data)
-        return income_entry_payload(database, entry)
+        return IncomeEntryResponse(**service.update(user_id, entry_id, _command(data)))
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
@@ -122,9 +146,23 @@ def put_income_entry(entry_id: int, data: IncomeEntryCreate, database: Session =
 
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_income_entry(entry_id: int, database: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def remove_income_entry(
+    entry_id: int,
+    service: IncomeEntryService = Depends(get_income_entry_service),
+    user_id: UUID = Depends(get_current_user_id),
+):
     try:
-        delete_income_entry(database, user.id, entry_id)
+        service.delete(user_id, entry_id)
     except ResourceNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def _command(data: IncomeEntryCreate) -> IncomeEntryCommand:
+    return IncomeEntryCommand(
+        description=data.description,
+        amount=Decimal(data.amount),
+        received_date=date.fromisoformat(str(data.received_date)),
+        income_category_id=data.income_category_id,
+        expense_category_id=data.expense_category_id,
+    )
