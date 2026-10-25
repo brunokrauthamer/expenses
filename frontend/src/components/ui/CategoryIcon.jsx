@@ -26,6 +26,7 @@ function normalizeCategoryName(name) {
 
 export default function CategoryIcon({ name, size = 18, ...props }) {
   const normalizedName = normalizeCategoryName(name);
-  const iconName = Object.entries(iconsByCategory).find(([key]) => normalizedName.startsWith(key))?.[1] ?? 'tag';
+  const iconName =
+    Object.entries(iconsByCategory).find(([key]) => normalizedName.startsWith(key))?.[1] ?? 'tag';
   return <Icon name={iconName} size={size} {...props} />;
 }

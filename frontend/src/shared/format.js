@@ -34,15 +34,19 @@ export function formatMoney(value) {
   const fraction = (match[3] ?? '').padEnd(2, '0').slice(0, 2);
   const cents = wholeAmount * 100n + BigInt(fraction || '0');
   const parts = currencyFormat.formatToParts(match[1] ? -1 : 1);
-  return parts.map((part) => {
-    if (part.type === 'integer') return integerFormat.format(cents / 100n);
-    if (part.type === 'fraction') return fraction;
-    return part.value;
-  }).join('');
+  return parts
+    .map((part) => {
+      if (part.type === 'integer') return integerFormat.format(cents / 100n);
+      if (part.type === 'fraction') return fraction;
+      return part.value;
+    })
+    .join('');
 }
 
 export function formatAmountInput(value) {
-  const digits = String(value ?? '').replace(/\D/g, '').slice(0, 12);
+  const digits = String(value ?? '')
+    .replace(/\D/g, '')
+    .slice(0, 12);
   if (!digits) return '';
 
   const integer = digits.length > 2 ? digits.slice(0, -2) : '0';

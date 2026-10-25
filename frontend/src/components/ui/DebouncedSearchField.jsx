@@ -18,8 +18,19 @@ export default function DebouncedSearchField({ value, onCommit }) {
     <label className="field full-field search-field">
       <span>Buscar</span>
       <div className="search-input-wrap">
-        <span aria-hidden="true"><Icon name="search" size={17} /></span>
-        <input name="search" type="search" maxLength="100" autoComplete="off" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Descrição, categoria ou meio de pagamento" aria-label="Buscar despesas por descricao, categoria ou meio de pagamento" />
+        <span aria-hidden="true">
+          <Icon name="search" size={17} />
+        </span>
+        <input
+          name="search"
+          type="search"
+          maxLength="100"
+          autoComplete="off"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Descrição, categoria ou meio de pagamento"
+          aria-label="Buscar despesas por descricao, categoria ou meio de pagamento"
+        />
       </div>
     </label>
   );
