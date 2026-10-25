@@ -157,6 +157,7 @@ src/
 - Configure o ambiente e um comando de execução dos testes unitários desde o início do projeto. Cada etapa de implementação só está concluída quando os testes unitários pertinentes passam; build, revisão visual e testes de integração complementam essa verificação.
 - Evite testes triviais de wrappers e testes que apenas repetem a implementação. Priorize cenários de sucesso, erro e limites dos contratos, sem exigir um teste para cada elemento de marcação.
 - Verifique componentes pelo comportamento observável: rótulos, ações, estado pendente, retorno de erro e recuperação.
+- Complemente os testes unitários com testes de integração para os contratos afetados entre camadas, API e persistência, e com testes de ponta a ponta (end-to-end) para os fluxos de usuário afetados. Testes de API e de DOM isolado não substituem a execução do fluxo completo pela interface; informe separadamente o que cada suíte verificou.
 - Configure lint e formatação de maneira proporcional à stack. Não misture reformatação geral, atualização de dependências e mudança funcional em uma refatoração pequena.
 - Em mudança exclusivamente documental, revise conteúdo, referências, comandos e diff; build não é obrigatório se nenhum código ou configuração de execução mudou.
 - Se uma verificação não puder ser executada, informe exatamente qual ficou pendente e por quê.
@@ -167,6 +168,7 @@ src/
 - Não preserve defeitos confirmados como requisito. Registre sua reprodução e trate a correção de maneira identificável, com verificação adequada.
 - Use a stack e o gerenciador de pacotes existentes. Justifique dependências novas e mantenha o lockfile coerente; não atualize versões incidentalmente.
 - Atualize a documentação relevante quando contratos, comandos ou decisões mudarem. Não reescreva histórico como se uma proposta já estivesse implementada.
+- Documente o código quando contratos, regras de negócio, limites ou decisões não forem evidentes. Use docstrings e comentários para explicar o motivo e as invariantes relevantes; mantenha-os atualizados junto da implementação e evite comentários que apenas repitam o código.
 - Preserve arquivos do usuário e dados reais. Não execute operações destrutivas ou publique alterações fora do escopo autorizado.
 - Antes de qualquer ação destrutiva, especialmente em banco de dados, tenha backup completo dos dados e recursos afetados, confira se ele pode ser recuperado e defina como restaurá-lo. Sem backup recuperável e procedimento de restauração conhecido, não execute a ação, mesmo que ela faça parte do escopo autorizado.
 - Não leia nem imprima segredos sem necessidade para a tarefa; nunca os inclua em artefatos ou commits.
@@ -181,9 +183,11 @@ Esta seção é específica do **Expenses**. Substitua-a ao usar este arquivo co
 - Monorepositório: `frontend` com React, Vite, JavaScript/JSX e CSS; `backend` com FastAPI, SQLAlchemy, Alembic e PostgreSQL.
 - Gerenciador do frontend: pnpm. Preserve `frontend/pnpm-lock.yaml`.
 - Leia [sistemaDePastas.md](sistemaDePastas.md), [CONTEXTO.md](CONTEXTO.md), [frontend/README.md](frontend/README.md) e [backend/README.md](backend/README.md) conforme a tarefa.
-- A exigência de backup e restauração antes de ações destrutivas também está registrada em [lembrete-agents.md](lembrete-agents.md).
+- [lembrete-agents.md](lembrete-agents.md) reforça backup e restauração antes de ações destrutivas, testes unitários, documentação de código e testes de integração e ponta a ponta.
 - Os planos de arquitetura do frontend e do backend estão em [PLANO_REFATORACAO_FRONTEND.md](PLANO_REFATORACAO_FRONTEND.md) e [PLANO_REFATORACAO_BACKEND.md](PLANO_REFATORACAO_BACKEND.md). São propostas, não descrevem mudanças já implementadas; a presença deles não autoriza uma reorganização completa fora da tarefa solicitada.
-- O usuário prefere explicações em português brasileiro, ferramentas gratuitas e ausência de funcionalidades adicionais não solicitadas.
+- O projeto é uma aplicação de controle de despesas pessoais. O usuário está desenvolvendo seu primeiro software: prefira explicações claras em português brasileiro, ferramentas gratuitas, evite serviços pagos e não acrescente funcionalidades sem solicitação.
+- Use nomes em inglês para tabelas e colunas do banco.
+- O [CONTEXTO.md](CONTEXTO.md) contém histórico de branches, verificações e migrations. Confirme o estado atual no Git e nos arquivos; não trate contagens antigas de testes, versões de runtime ou migrations anteriormente aplicadas como evidência atual. A estrutura do frontend já evoluiu em relação à árvore registrada nesse documento; confira [frontend/README.md](frontend/README.md) e o código.
 
 ### Backend deste projeto
 
@@ -192,23 +196,50 @@ Esta seção é específica do **Expenses**. Substitua-a ao usar este arquivo co
 - Os módulos atuais possuem `controller.py`, `schema.py`, `service.py` e `model.py`; infraestrutura compartilhada fica em `backend/app/shared/`. A separação ainda precisa ser concluída conforme [PLANO_REFATORACAO_BACKEND.md](PLANO_REFATORACAO_BACKEND.md).
 - Pendências confirmadas no código: controllers de despesas e entradas validam regras de período; o controller de autenticação coordena integração Google, conflitos de banco e rollback; services e `shared/catalog.py` misturam regras com consultas e gravações. Essa situação deve ser corrigida nas etapas de refatoração, sem ser adotada como padrão para código novo.
 - O processo e os dados iniciais do Expenses estão documentados em [backend/README.md](backend/README.md): a conta recebe catálogos no cadastro ou primeiro login Google; `python -m app.seed --user-id <UUID-DA-CONTA>` inicializa manualmente os catálogos de uma conta e registra a inicialização uma única vez.
+- O importador `python -m app.import_expenses --user-id <UUID-DA-CONTA>` oferece uma prévia sem gravação; `--apply` grava os itens. Preserve a exigência do proprietário e a deduplicação das mesmas fontes dentro da conta, sem executar importações reais em verificações.
+- A migration `20261024_0008` atribui dados legados a uma única conta e exige exatamente um usuário quando há esses dados; preserva registros e IDs e verifica conflitos de nomes, vínculos, contagens e totais. O downgrade bloqueia bancos com mais de um usuário. Sua execução em banco real exige backup recuperável e janela sem escritas; confirme a revisão aplicada sem presumir que o histórico do contexto ainda esteja atualizado.
 - O backend usa testes com SQLite em memória; essa configuração não substitui verificações específicas de PostgreSQL para migrations ou comportamento dependente do banco.
 - As dependências de desenvolvimento atuais incluem pytest, mas não configuram formatador, linter ou ferramenta de cobertura. Sua adoção está prevista no plano do backend; não relate esses checks como disponíveis antes de configurá-los.
 
 ### Comportamentos a preservar
 
 - Interface em pt-BR, moeda BRL e datas de calendário sem deslocamento de dia. Não usar verde no tema.
+- Preserve a aparência financeira profissional: base clara, tons neutros, ações destacadas, tipografia legível, ícones consistentes e poucos elementos decorativos.
 - Rotas de negócio: `/despesas`, `/gastos`, `/consolidado` e `/configuracoes`; autenticação em `/entrar`, `/cadastro` e conclusão Google em `/auth/complete`.
 - Login local e Google coexistem. Preserve validações de origem, janela e identificador no popup, fallback por redirecionamento e restrição do destino de retorno a rotas internas permitidas.
-- Access token somente em memória; refresh token em cookie HttpOnly. Não mover tokens para localStorage ou sessionStorage.
+- Preserve o Google Authorization Code com PKCE, `state`, `nonce` e validação do ID token no backend. O popup comunica apenas o resultado, sem tokens. O vínculo automático a uma conta local pelo e-mail só é permitido para Gmail ou domínio Workspace confirmado pelo Google.
+- Access token JWT RS256 com validade padrão de 15 minutos somente em memória; refresh token rotativo em cookie `HttpOnly`, `SameSite=Lax`. Preserve a renovação ao receber 401 e a restauração da sessão após recarregar. Não mover tokens para localStorage ou sessionStorage.
+- E-mail, nome e identificador Google são cifrados com AES-256-GCM, com índices HMAC separados para busca; senhas usam Argon2id. Mantenha as chaves fora do Git e preserve a leitura dos dados cifrados durante rotações conforme o procedimento do backend.
+- Todas as rotas de negócio exigem Bearer válido. Consultas, contagens, paginação, relatórios e alterações usam o proprietário autenticado; IDs de outra conta retornam 404. Preserve as chaves estrangeiras compostas que impedem vínculos entre contas.
 - O cache de dados privados é separado por conta e limpo/cancelado no logout ou na troca de sessão. Referências ativas e históricas têm chaves distintas.
 - Referências têm validade atual de 30 minutos; resultados, 2 minutos; retenção inativa, 5 minutos. Não alterar essas políticas incidentalmente.
-- Categorias e meios excluídos continuam identificáveis em históricos e edições antigas; novos lançamentos usam opções ativas.
-- Compra, parcela e entrada são entidades diferentes. Cobranças contam pelo vencimento; reembolsos, pelo recebimento. Filtros de pagamento possuem efeitos próprios em cada endpoint: confira o contrato, sem uniformizá-los por conveniência.
+- Preserve deduplicação de consultas, cancelamento de leituras sem observadores e exposição de falhas no snapshot do cache, sem rejeições de promessas ignoradas por assinantes. Alterações em despesas invalidam pagamentos do mês, histórico e consolidado; alterações em entradas atualizam suas listas, reembolsos, resumo líquido e consolidado.
+- Categorias de despesas, categorias de entradas e meios de pagamento têm CRUD por conta em `/configuracoes`, nomes ativos únicos sem diferenciar maiúsculas de minúsculas e exclusão lógica. Reutilizar um nome excluído cria outro ID. Referências excluídas continuam identificáveis em históricos, buscas, filtros, totais e edições antigas; novos lançamentos usam opções ativas. Consultas históricas usam `include_deleted=true`; edições podem manter a referência excluída que já possuíam.
+- Categorias de entrada definem o vínculo com despesas por `requires_expense_category`, independentemente do nome. Quando verdadeiro, `expense_category_id` é obrigatório; quando falso, é rejeitado. Essa regra não pode mudar depois do primeiro lançamento vinculado. Salários e outros ganhos não reduzem despesas.
+- Compra, parcela e entrada são entidades diferentes. Cobranças contam pelo vencimento; reembolsos, pelo recebimento. São cobranças programadas, não pagamentos confirmados. No histórico combinado, busca e categoria filtram ambos os tipos; meio de pagamento filtra apenas cobranças e mantém reembolsos. No consolidado, o filtro por meio de pagamento exclui reembolsos do cálculo.
+- `/gastos` usa o mês atual por padrão, combina cobranças e reembolsos em uma lista paginada e ordena globalmente pela data do evento. Reembolsos têm valor positivo na API e no banco, mas aparecem negativos e em vermelho na interface, com a categoria de despesa vinculada. Preserve os totais bruto, de reembolsos e líquido, e os aliases `amount_due` e `total_amount_due` do líquido no resumo.
+- `GET /expenses` lista cobranças: `id` identifica a compra, `installment_id` identifica a cobrança, `amount_due` é o valor da parcela e `total_amount` é o total da compra. `total` conta cobranças, não valores monetários. `month=AAAA-MM` filtra pela cobrança; sem período, retorna todas as programadas. A busca considera descrição, categoria e meio de pagamento sem diferenciar maiúsculas de minúsculas. A paginação usa `page=1` e `page_size=20` por padrão, com máximo de 100 itens; períodos inclusivos aceitam até 120 meses. Confira os parâmetros próprios de cada endpoint.
+- Compras aceitam `payment_type=one_time|installments` e `amount_type=total|installment`; `installment_count` vai de 1 a 1200 e parcelados exigem ao menos 2 parcelas. `first_installment_date` assume `expense_date` quando ausente. PUT altera a compra inteira e recalcula o cronograma quando mudam valor, datas ou quantidade; DELETE remove a compra e todas as cobranças, com resposta 204.
 - Totais completos vêm da API quando disponíveis. Subtotal de uma página de resultados deve ser identificado como tal.
 - Valores financeiros exatos usam strings decimais ou centavos inteiros; não introduza soma monetária por ponto flutuante. Conversão para escala de gráfico não deve virar fonte de totais.
 - Datas, máscaras, regras de parcelamento e associação de reembolsos não podem mudar como efeito de uma extração de componentes.
+- A máscara monetária recebe algarismos como centavos: `107643` resulta em `R$ 1.076,43`. Preserve `formatAmountInput` em `frontend/src/shared/format.js` e o espaço próprio do prefixo `R$`, inclusive no celular.
+- Preserve a navegação por History API, Header e Footer compartilhados e carregamento tardio das telas. No cadastro, a lista do mês mostra uma linha por cobrança, ordenada pela data da compra, com valor da parcela, indicação da parcela atual e quantidade total quando parcelada, e soma mensal no cabeçalho.
+- Preserve os filtros do histórico e do consolidado e a paginação do histórico na URL, debounce de busca, aplicação explícita do período personalizado e remoção individual ou limpeza dos filtros ativos.
+- As telas financeiras ocupam a altura da janela com rolagem interna delimitada, títulos e totais visíveis e botão de salvar disponível. No celular (até 700 px), `SectionSwitcher` alterna as seções preservando o rascunho; a edição abre o formulário e foca a descrição sem rolar o documento inteiro. As regras atuais ficam junto dos componentes e páginas, não no antigo `viewport.css` citado no contexto.
+- A edição permite cancelar e evidencia seu estado no painel. A exclusão pede confirmação, identifica o registro, avisa sobre a remoção de todas as parcelas e mantém falhas visíveis no diálogo; botão, Escape e fundo permitem cancelar.
+- O gráfico de evolução mensal é de barras. Preserve gráficos SVG responsivos, rótulos adaptados à largura, valores por interação, tabelas acessíveis e respeito a movimento reduzido.
 - Não aplique migrações ou altere dados financeiros reais como parte de tarefas de frontend ou documentação.
+
+### Ambiente, transporte e Git
+
+- A API usa `/api` por padrão; `VITE_API_BASE_URL` altera a base na compilação. Variáveis `VITE_` são públicas e nunca recebem credenciais. No desenvolvimento e preview, o Vite encaminha `/api` a `BACKEND_PROXY_TARGET` (padrão `http://127.0.0.1:8000`) removendo o prefixo. Reinicie o Vite após mudar o ambiente.
+- O proxy do Vite não atende produção: a hospedagem deve encaminhar `/api` ao backend removendo o prefixo ou usar uma URL pública de API definida no build. Outra origem exige CORS, ainda não configurado no backend. As rotas da interface precisam retornar `index.html`. Preserve o timeout HTTP de 15 segundos e o diagnóstico de HTML recebido em lugar de JSON; confira endereço e proxy nesse cenário.
+- O PostgreSQL é local, inspecionado pelo pgAdmin; `DATABASE_URL` fica em `backend/.env`, com modelo em `backend/.env.example`. Reutilize `backend/.venv` e recrie o ambiente apenas quando necessário. Em produção, use HTTPS, `AUTH_COOKIE_SECURE=true` e caminho de cookie compatível com o prefixo público da API (padrão `/api/auth`).
+- `iniciar.ps1` inicia os servidores e abre `http://localhost:5173`. Preserve o Uvicorn com `--no-access-log` para não registrar `code` e `state` do callback OAuth.
+- Melhorias devem usar branches separadas e PRs para `master`; não é necessário criar branches principais `dev`, `qa` ou `staging`. Confirme branch e alterações locais antes de agir e preserve logs e arquivos não rastreados.
+- Antes de commits, revise os arquivos staged e confirme que segredos, chaves, ambientes virtuais, dependências, builds e caches permanecem excluídos. Preserve as regras do `.gitignore`, incluindo `.env` e `client_secret_*.json`.
+- Se Git não estiver no PATH, verifique `C:/Program Files/Git/cmd/git.exe`. Em falhas de push por conectividade, confira rede e autenticação e use o acesso autorizado, sem presumir que limitações de ferramentas relatadas em sessões antigas ainda existam.
 
 ### Comandos disponíveis
 
@@ -217,10 +248,18 @@ Dentro de `frontend`:
 ```powershell
 pnpm dev
 pnpm build
+pnpm test
+pnpm test:unit
+pnpm test:dom
+pnpm lint
+pnpm format:check
+pnpm format
 node --test tests/queryCache.test.js
 ```
 
-Na criação deste arquivo, `package.json` não possui scripts `test`, `lint` ou `format`. O teste do cache é executado diretamente pelo Node. Se Node/pnpm não estiverem no PATH do shell, verifique os runtimes já disponíveis antes de propor instalação.
+O `package.json` atual configura `test` (Node e Vitest), `test:unit` (Node), `test:dom` (Vitest, jsdom e Testing Library), `lint` (ESLint) e formatação (Prettier). O comando direto do cache continua útil para a verificação focada. `pnpm format` escreve nos arquivos; evite formatação geral fora do escopo.
+
+Confira os requisitos de Node em `frontend/README.md` e nas dependências atuais; a versão citada no contexto é histórica. Se Node/pnpm não estiverem no PATH do shell, verifique os runtimes já disponíveis antes de propor instalação. O contexto registra como alternativa o Node em `C:/Users/bruno/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe`, usando `frontend/node_modules/vite/bin/vite.js` para o build a partir de `frontend`; confirme disponibilidade e compatibilidade antes de usar.
 
 Dentro de `backend`, com o ambiente virtual e dependências de desenvolvimento configurados:
 
